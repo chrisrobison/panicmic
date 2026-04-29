@@ -214,8 +214,19 @@ function bindEvents() {
     }
     const provision = event.target.closest('[data-provision]');
     if (provision) {
-      await api(`/super/tenants/${provision.dataset.provision}/provision`, { method: 'POST', body: JSON.stringify({}) });
-      await loadTenants();
+      const card = provision.closest('.tenant-card');
+      const statusEl = $('[data-status]', card);
+      try {
+        provision.disabled = true;
+        if (statusEl) statusEl.textContent = 'Provisioning...';
+        await api(`/super/tenants/${provision.dataset.provision}/provision`, { method: 'POST', body: JSON.stringify({}) });
+        if (statusEl) statusEl.textContent = 'Provisioned.';
+        await loadTenants();
+      } catch (error) {
+        if (statusEl) statusEl.textContent = error.message;
+      } finally {
+        provision.disabled = false;
+      }
     }
   });
 
@@ -277,7 +288,7 @@ async function loadTenants() {
   if (!container) return;
   try {
     const data = await api('/api/super/tenants');
-    container.innerHTML = data.tenants.map(t => `<article class="tenant-card"><strong>${escapeHtml(t.venue_name)}</strong><br>${escapeHtml(t.database_name)}<br><button data-provision="${t.id}">Provision</button></article>`).join('');
+    container.innerHTML = data.tenants.map(t => `<article class="tenant-card"><strong>${escapeHtml(t.venue_name)}</strong><br>${escapeHtml(t.database_name)}<br><button data-provision="${t.id}">Provision</button><p class="form-status" data-status></p></article>`).join('');
   } catch (error) {
     container.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
   }

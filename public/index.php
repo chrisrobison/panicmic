@@ -416,8 +416,12 @@ function handleSuper(string $path, string $method): never
         if (!$tenant) {
             Response::json(['error' => 'Tenant not found'], 404);
         }
-        provisionTenant($tenant);
-        Response::json(['ok' => true]);
+        try {
+            provisionTenant($tenant);
+            Response::json(['ok' => true]);
+        } catch (Throwable $error) {
+            Response::json(['error' => 'Provisioning failed: ' . $error->getMessage()], 500);
+        }
     }
     Response::json(['error' => 'Not found'], 404);
 }
@@ -436,5 +440,9 @@ function provisionTenant(array $tenant): void
     foreach (glob($root . '/migrations/tenant/*.sql') ?: [] as $file) {
         $tenantDb->exec(file_get_contents($file) ?: '');
     }
-    ContentService::ensureTenantDirectory((string)$tenant['slug']);
+    try {
+        ContentService::ensureTenantDirectory((string)$tenant['slug']);
+    } catch (Throwable $error) {
+        throw new RuntimeException('Tenant database was created, but the content folder could not be created. Make /content writable by PHP-FPM/Apache and retry. Details: ' . $error->getMessage(), 0, $error);
+    }
 }
