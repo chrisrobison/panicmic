@@ -68,15 +68,17 @@ h1, h2, p { margin-top: 0; }
   border-radius: 8px;
   padding: 22px;
 }
-.request-form, .login form, .song-editor, .tenant-create { display: grid; gap: 16px; }
-.song-results, .queue-list, .queue-board, .song-grid, .tenant-list { display: grid; gap: 10px; }
-.song-result, .queue-item, .song-card, .tenant-card {
+.request-form, .login form, .song-editor, .tenant-create, .content-upload { display: grid; gap: 16px; }
+.song-results, .queue-list, .queue-board, .song-grid, .tenant-list, .content-grid { display: grid; gap: 10px; }
+.song-result, .queue-item, .song-card, .tenant-card, .content-card {
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: 8px;
   padding: 14px;
 }
 .song-result { text-align: left; }
+.content-card { display: grid; grid-template-columns: minmax(0, 1fr) 90px 80px; gap: 12px; align-items: center; }
+.content-card a { color: var(--accent); font-weight: 700; }
 .song-result.selected { border-color: var(--primary); }
 .queue-strip, .workspace { padding: 32px max(18px, 6vw); }
 .workspace.narrow { max-width: 760px; margin: 0 auto; }

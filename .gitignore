@@ -4,3 +4,6 @@ npm-debug.log*
 coverage/
 dist/
 .DS_Store
+content/*
+!content/.gitkeep
+!content/.htaccess

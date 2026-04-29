@@ -1,5 +1,10 @@
+<?php use function NextUp\Support\e; ?>
 <section class="admin-layout">
-  <aside><a href="/admin/dashboard">Queue</a><a href="/admin/songs">Songs</a></aside>
+  <aside>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/dashboard')) ?>">Queue</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/songs')) ?>">Songs</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/content')) ?>">Content</a>
+  </aside>
   <section class="operator">
     <form class="panel song-editor" data-song-create>
       <h1>Add Song</h1>

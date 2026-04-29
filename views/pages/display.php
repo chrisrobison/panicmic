@@ -1,3 +1,9 @@
+<?php
+use NextUp\Support\Url;
+use function NextUp\Support\e;
+
+$requestUrl = $tenant['public_request_url'] ?: ('http://' . ($_SERVER['HTTP_HOST'] ?? '') . Url::path('/'));
+?>
 <section class="display-shell">
   <div class="display-brand">
     <strong><?= e($tenant['venue_name']) ?></strong>
@@ -18,7 +24,7 @@
     <div class="qr">
       <h2>Request Songs</h2>
       <div data-qr></div>
-      <p><?= e($tenant['public_request_url'] ?: ('http://' . ($_SERVER['HTTP_HOST'] ?? '') . '/')) ?></p>
+      <p><?= e($requestUrl) ?></p>
     </div>
   </div>
   <div class="display-announcement" data-display-announcement hidden></div>

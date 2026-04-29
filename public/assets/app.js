@@ -1,11 +1,17 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+const basePath = (window.NEXTUP?.basePath || '').replace(/\/$/, '');
+
+function url(path) {
+  const normalized = `/${String(path || '').replace(/^\/+/, '')}`;
+  return normalized === '/' ? (basePath || '/') : `${basePath}${normalized}`;
+}
 
 async function api(path, options = {}) {
   const headers = { 'Accept': 'application/json', ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   if (!['GET', undefined].includes(options.method)) headers['X-CSRF-Token'] = window.NEXTUP.csrf;
-  const response = await fetch(path, { ...options, headers });
+  const response = await fetch(url(path), { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
@@ -71,7 +77,7 @@ function renderDisplay(queue, display = {}) {
   const qr = $('[data-qr]');
   if (qr && !qr.dataset.done) {
     qr.dataset.done = '1';
-    qr.innerHTML = qrSvg(location.origin + '/');
+    qr.innerHTML = qrSvg(location.origin + url('/'));
   }
 }
 
@@ -111,7 +117,7 @@ function bindEvents() {
     event.preventDefault();
     try {
       await api('/api/admin/login', { method: 'POST', body: JSON.stringify(formData(event.target)) });
-      location.href = '/admin/dashboard';
+      location.href = url('/admin/dashboard');
     } catch (error) { $('[data-status]', event.target).textContent = error.message; }
   });
 
@@ -119,7 +125,7 @@ function bindEvents() {
     event.preventDefault();
     try {
       await api('/api/super/login', { method: 'POST', body: JSON.stringify(formData(event.target)) });
-      location.href = '/super/tenants';
+      location.href = url('/super/tenants');
     } catch (error) { $('[data-status]', event.target).textContent = error.message; }
   });
 
@@ -177,6 +183,17 @@ function bindEvents() {
     } catch (error) { $('[data-status]', event.target).textContent = error.message; }
   });
 
+  $('[data-content-upload]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const body = new FormData(event.target);
+    try {
+      await api('/api/admin/content', { method: 'POST', body });
+      $('[data-status]', event.target).textContent = 'File uploaded.';
+      event.target.reset();
+      await loadContentFiles();
+    } catch (error) { $('[data-status]', event.target).textContent = error.message; }
+  });
+
   $('[data-tenant-create]')?.addEventListener('submit', async event => {
     event.preventDefault();
     await api('/super/tenants', { method: 'POST', body: JSON.stringify(formData(event.target)) });
@@ -196,9 +213,26 @@ async function loadTenants() {
   }
 }
 
+async function loadContentFiles() {
+  const container = $('[data-content-files]');
+  if (!container) return;
+  try {
+    const data = await api('/api/admin/content');
+    container.innerHTML = data.files.map(file => `
+      <article class="content-card">
+        <strong>${escapeHtml(file.name)}</strong>
+        <span>${Math.ceil(Number(file.size || 0) / 1024)} KB</span>
+        <a href="${escapeHtml(file.url)}" target="_blank" rel="noreferrer">Open</a>
+      </article>
+    `).join('') || '<p>No content uploaded yet.</p>';
+  } catch (error) {
+    container.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+  }
+}
+
 function startEvents() {
-  if (!window.EventSource || location.pathname.startsWith('/super')) return;
-  const source = new EventSource('/api/events');
+  if (!window.EventSource || location.pathname.startsWith(url('/super'))) return;
+  const source = new EventSource(url('/api/events'));
   ['queue:updated', 'request:created', 'request:status_changed', 'display:state_changed', 'announcement:shown'].forEach(name => {
     source.addEventListener(name, () => loadQueue().catch(() => {}));
   });
@@ -207,4 +241,5 @@ function startEvents() {
 bindEvents();
 loadQueue().catch(() => {});
 loadTenants();
+loadContentFiles();
 startEvents();

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use NextUp\Database\Connection;
+use NextUp\Services\ContentService;
 use NextUp\Support\Env;
 
 require dirname(__DIR__) . '/src/autoload.php';
@@ -70,6 +71,7 @@ foreach ($tenants as $tenant) {
         ->execute([$adminEmail, $adminPassword, 'KJ Admin', 'tenant_admin']);
     seedSongs($db);
     $db->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('prevent_duplicate_requests', CAST('true' AS JSON))")->execute();
+    ContentService::ensureTenantDirectory($tenant['slug']);
 }
 
 echo "Seeded super admin and demo tenants.\n";

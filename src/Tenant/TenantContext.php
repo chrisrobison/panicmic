@@ -6,6 +6,7 @@ namespace NextUp\Tenant;
 
 use NextUp\Database\Connection;
 use NextUp\Support\Env;
+use NextUp\Support\Request;
 use NextUp\Support\Response;
 use PDO;
 
@@ -18,7 +19,7 @@ final class TenantContext
 
     public static function resolve(): ?self
     {
-        $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+        $path = Request::path();
         $host = self::host();
         if ($host === '' || !self::allowed($host)) {
             Response::json(['error' => 'Unrecognized host'], 400);

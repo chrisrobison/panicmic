@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use NextUp\Auth\Auth;
 use NextUp\Database\Connection;
+use NextUp\Services\ContentService;
 use NextUp\Services\DisplayService;
 use NextUp\Services\EventBus;
 use NextUp\Services\QueueService;
@@ -14,6 +15,7 @@ use NextUp\Support\Env;
 use NextUp\Support\Request;
 use NextUp\Support\Response;
 use NextUp\Support\Security;
+use NextUp\Support\Url;
 use NextUp\Tenant\TenantContext;
 
 require dirname(__DIR__) . '/src/autoload.php';
@@ -50,6 +52,12 @@ try {
 
     $db = $tenantContext->db;
     $tenant = $tenantContext->tenant;
+
+    if (str_starts_with($path, '/files')) {
+        $filePath = substr($path, strlen('/files')) ?: '';
+        ContentService::serve((string)$tenant['slug'], $filePath);
+    }
+
     $session = SessionService::current($db, $tenant['night_name']);
     $settings = SettingsService::all($db);
 
@@ -69,6 +77,7 @@ try {
         $path === '/admin/dashboard' && $method === 'GET' => page('admin-dashboard', $tenant, $session),
         $path === '/admin/queue' && $method === 'GET' => page('admin-dashboard', $tenant, $session),
         $path === '/admin/songs' && $method === 'GET' => page('admin-songs', $tenant, $session),
+        $path === '/admin/content' && $method === 'GET' => page('admin-content', $tenant, $session),
         $path === '/admin/singers' && $method === 'GET' => page('admin-dashboard', $tenant, $session),
         $path === '/admin/settings' && $method === 'GET' => page('admin-settings', $tenant, $session),
         $path === '/display/control' && $method === 'GET' => page('admin-dashboard', $tenant, $session),
@@ -84,6 +93,8 @@ try {
         $path === '/api/admin/login' && $method === 'POST' => tenantLogin($db),
         $path === '/api/admin/logout' && $method === 'POST' => logoutTenant(),
         $path === '/api/admin/songs' && $method === 'POST' => createSong($db, $tenant),
+        $path === '/api/admin/content' && $method === 'GET' => listContent($tenant),
+        $path === '/api/admin/content' && $method === 'POST' => uploadContent($tenant),
         $path === '/api/events' && $method === 'GET' => sse($db),
         default => Response::json(['error' => 'Not found'], 404),
     };
@@ -96,6 +107,7 @@ try {
 function page(string $page, array $tenant, array $session): never
 {
     $csrf = Security::csrfToken();
+    $basePath = Url::basePath();
     require dirname(__DIR__) . '/views/layout.php';
     exit;
 }
@@ -218,6 +230,34 @@ function createSong(PDO $db, array $tenant): never
     Response::json(['id' => $id]);
 }
 
+/** @param array<string,mixed> $tenant @return list<array<string,mixed>> */
+function contentFiles(array $tenant): array
+{
+    return array_map(static function (array $file): array {
+        $file['url'] = Url::path($file['url']);
+        return $file;
+    }, ContentService::list((string)$tenant['slug']));
+}
+
+/** @param array<string,mixed> $tenant */
+function listContent(array $tenant): never
+{
+    Auth::requireTenantRole('kj', 'tenant_admin');
+    Response::json(['files' => contentFiles($tenant)]);
+}
+
+/** @param array<string,mixed> $tenant */
+function uploadContent(array $tenant): never
+{
+    Auth::requireTenantRole('kj', 'tenant_admin');
+    if (empty($_FILES['content_file']) || !is_array($_FILES['content_file'])) {
+        Response::json(['error' => 'No file uploaded'], 400);
+    }
+    $file = ContentService::storeUpload((string)$tenant['slug'], $_FILES['content_file']);
+    $file['url'] = Url::path($file['url']);
+    Response::json(['file' => $file, 'files' => contentFiles($tenant)]);
+}
+
 function sse(PDO $db): never
 {
     header('Content-Type: text/event-stream');
@@ -323,4 +363,5 @@ function provisionTenant(array $tenant): void
     foreach (glob($root . '/migrations/tenant/*.sql') ?: [] as $file) {
         $tenantDb->exec(file_get_contents($file) ?: '');
     }
+    ContentService::ensureTenantDirectory((string)$tenant['slug']);
 }

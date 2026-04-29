@@ -1,9 +1,11 @@
+<?php use function NextUp\Support\e; ?>
 <section class="admin-layout">
   <aside>
-    <a href="/admin/dashboard">Dashboard</a>
-    <a href="/admin/songs">Songs</a>
-    <a href="/admin/settings">Settings</a>
-    <a href="/display/control">Display Control</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/dashboard')) ?>">Dashboard</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/songs')) ?>">Songs</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/content')) ?>">Content</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/admin/settings')) ?>">Settings</a>
+    <a href="<?= e(\NextUp\Support\Url::path('/display/control')) ?>">Display Control</a>
   </aside>
   <section class="operator">
     <div class="toolbar live-controls">

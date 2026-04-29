@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use function NextUp\Support\e;
+use NextUp\Support\Url;
 
 $title = $tenant['venue_name'] . ' - ' . $tenant['night_name'];
 $bodyClass = str_replace('-', ' ', $page);
@@ -14,22 +15,22 @@ $bodyClass = str_replace('-', ' ', $page);
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= e($title) ?></title>
   <meta name="csrf-token" content="<?= e($csrf) ?>">
-  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
   <style>
     :root { --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>; --accent: <?= e($tenant['accent_color'] ?? '#facc15') ?>; }
   </style>
 </head>
 <body class="<?= e($page) ?>">
   <header class="topbar">
-    <a class="brand" href="/">
+    <a class="brand" href="<?= e(Url::path('/')) ?>">
       <?php if (!empty($tenant['logo_url'])): ?><img src="<?= e($tenant['logo_url']) ?>" alt=""><?php endif; ?>
       <span><strong><?= e($tenant['venue_name']) ?></strong><small><?= e($tenant['night_name']) ?></small></span>
     </a>
     <nav>
-      <a href="/songs">Songs</a>
-      <a href="/me">My Spot</a>
-      <a href="/admin/dashboard">KJ</a>
-      <a href="/display">Display</a>
+      <a href="<?= e(Url::path('/songs')) ?>">Songs</a>
+      <a href="<?= e(Url::path('/me')) ?>">My Spot</a>
+      <a href="<?= e(Url::path('/admin/dashboard')) ?>">KJ</a>
+      <a href="<?= e(Url::path('/display')) ?>">Display</a>
     </nav>
   </header>
   <main data-page="<?= e($page) ?>">
@@ -38,9 +39,10 @@ $bodyClass = str_replace('-', ' ', $page);
   <script>
     window.NEXTUP = {
       csrf: <?= json_encode($csrf, JSON_THROW_ON_ERROR) ?>,
-      page: <?= json_encode($page, JSON_THROW_ON_ERROR) ?>
+      page: <?= json_encode($page, JSON_THROW_ON_ERROR) ?>,
+      basePath: <?= json_encode($basePath, JSON_THROW_ON_ERROR) ?>
     };
   </script>
-  <script src="/assets/app.js"></script>
+  <script src="<?= e(Url::path('/assets/app.js')) ?>"></script>
 </body>
 </html>
