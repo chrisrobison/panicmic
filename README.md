@@ -181,3 +181,23 @@ After pulling this feature into an existing tenant database, run:
 php scripts/migrate.php tenant nextup_bluebird
 php scripts/migrate.php tenant nextup_neon
 ```
+
+## Curated Song Catalogs
+
+Each tenant has its own isolated song catalog. KJs can manage `Admin -> Songs` and attach:
+
+- a direct video-with-lyrics URL
+- a provider name such as `youtube`, `karafun`, `stingray`, `singa`, `local`, or a custom value
+- provider track IDs and provider URLs
+- a separate lyrics URL
+
+This keeps the public songbook tenant-specific while still allowing the KJ to launch the correct source from the queue or catalog.
+
+KaraFun integration should be treated as a licensed provider integration. KaraFun’s public help documents CSV catalog downloads for catalog curation, and KaraFun Business documents API access through bearer tokens plus downloadable OpenAPI YAML from the Business dashboard. Configure credentials with:
+
+```env
+KARAFUN_API_TOKEN=
+KARAFUN_API_BASE_URL=https://business.karafun.com/api
+```
+
+Other providers can follow the same pattern using `video_provider`, `provider_track_id`, and `provider_url`; Stingray placeholders are included in `.env.example`.

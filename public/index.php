@@ -95,6 +95,7 @@ try {
         $path === '/api/admin/login' && $method === 'POST' => tenantLogin($db),
         $path === '/api/admin/logout' && $method === 'POST' => logoutTenant(),
         $path === '/api/admin/songs' && $method === 'POST' => createSong($db, $tenant),
+        (bool)preg_match('#^/api/admin/songs/(\d+)$#', $path, $m) && $method === 'PATCH' => updateSong($db, $tenant, (int)$m[1]),
         $path === '/api/admin/content' && $method === 'GET' => listContent($tenant),
         $path === '/api/admin/content' && $method === 'POST' => uploadContent($tenant),
         $path === '/api/events' && $method === 'GET' => sse($db),
@@ -264,6 +265,19 @@ function createSong(PDO $db, array $tenant): never
     $id = SongService::create($db, $input);
     EventBus::publish($db, 'song:created', ['songId' => $id]);
     Response::json(['id' => $id]);
+}
+
+/** @param array<string,mixed> $tenant */
+function updateSong(PDO $db, array $tenant, int $songId): never
+{
+    Auth::requireTenantRole('kj', 'tenant_admin');
+    $input = Request::input();
+    if (trim((string)($input['title'] ?? '')) === '' || trim((string)($input['artist'] ?? '')) === '') {
+        Response::json(['error' => 'Title and artist are required'], 400);
+    }
+    SongService::update($db, $songId, $input);
+    EventBus::publish($db, 'song:updated', ['songId' => $songId]);
+    Response::json(['ok' => true]);
 }
 
 /** @param array<string,mixed> $tenant @return list<array<string,mixed>> */

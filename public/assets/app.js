@@ -49,6 +49,13 @@ function renderPublicQueue(queue) {
   });
 }
 
+function providerOptions(selected) {
+  return ['', 'youtube', 'karafun', 'stingray', 'singa', 'local'].map(provider => {
+    const label = provider === '' ? 'Custom / none' : provider;
+    return `<option value="${provider}" ${provider === (selected || '') ? 'selected' : ''}>${label}</option>`;
+  }).join('');
+}
+
 function renderAdminQueue(queue) {
   const container = $('[data-admin-queue]');
   if (!container) return;
@@ -97,12 +104,44 @@ async function searchSongs(targetResults) {
   const genre = $('[data-song-genre]')?.value || '';
   const decade = $('[data-song-decade]')?.value || '';
   const data = await api(`/api/songs?query=${encodeURIComponent(query)}&genre=${encodeURIComponent(genre)}&decade=${encodeURIComponent(decade)}`);
-  const html = data.songs.map(song => `
+  const adminCatalog = appConfig.page === 'admin-songs';
+  const html = data.songs.map(song => adminCatalog ? adminSongCard(song) : publicSongButton(song)).join('') || '<p>No songs found.</p>';
+  targetResults.innerHTML = html;
+}
+
+function publicSongButton(song) {
+  const link = song.video_url || song.provider_url || song.lyrics_url || '';
+  return `
     <button class="song-result" type="button" data-song-id="${song.id}" data-song-label="${escapeHtml(song.title)} - ${escapeHtml(song.artist)}">
       <strong>${escapeHtml(song.title)}</strong><br><span>${escapeHtml(song.artist)}</span>
+      ${link ? `<small>${escapeHtml(song.video_provider || 'video')} available</small>` : ''}
     </button>
-  `).join('') || '<p>No songs found.</p>';
-  targetResults.innerHTML = html;
+  `;
+}
+
+function adminSongCard(song) {
+  return `
+    <form class="song-card song-catalog-editor" data-song-update="${song.id}">
+      <div class="song-editor-grid">
+        <label>Title<input name="title" value="${escapeHtml(song.title)}" required></label>
+        <label>Artist<input name="artist" value="${escapeHtml(song.artist)}" required></label>
+        <label>Genre<input name="genre" value="${escapeHtml(song.genre || '')}"></label>
+        <label>Decade<input name="decade" type="number" min="1900" max="2090" step="10" value="${escapeHtml(song.decade || '')}"></label>
+        <label>Popularity<input name="popularity" type="number" min="0" value="${escapeHtml(song.popularity || 0)}"></label>
+        <label>Video with lyrics URL<input name="video_url" type="url" value="${escapeHtml(song.video_url || '')}"></label>
+        <label>Provider<select name="video_provider">${providerOptions(song.video_provider)}</select></label>
+        <label>Provider track ID<input name="provider_track_id" value="${escapeHtml(song.provider_track_id || '')}"></label>
+        <label>Provider URL<input name="provider_url" type="url" value="${escapeHtml(song.provider_url || '')}"></label>
+        <label>Lyrics URL<input name="lyrics_url" type="url" value="${escapeHtml(song.lyrics_url || '')}"></label>
+      </div>
+      <div class="song-card-actions">
+        ${song.video_url ? `<a href="${escapeHtml(song.video_url)}" target="_blank" rel="noreferrer">Open video</a>` : ''}
+        ${song.provider_url ? `<a href="${escapeHtml(song.provider_url)}" target="_blank" rel="noreferrer">Open provider</a>` : ''}
+        <button class="primary">Update</button>
+        <span data-status></span>
+      </div>
+    </form>
+  `;
 }
 
 function enableDrag(container) {
@@ -193,6 +232,16 @@ function bindEvents() {
       $('[data-status]', event.target).textContent = 'Song saved.';
       event.target.reset();
     } catch (error) { $('[data-status]', event.target).textContent = error.message; }
+  });
+
+  document.addEventListener('submit', async event => {
+    const form = event.target.closest('[data-song-update]');
+    if (!form) return;
+    event.preventDefault();
+    try {
+      await api(`/api/admin/songs/${form.dataset.songUpdate}`, { method: 'PATCH', body: JSON.stringify(formData(form)) });
+      $('[data-status]', form).textContent = 'Updated.';
+    } catch (error) { $('[data-status]', form).textContent = error.message; }
   });
 
   $('[data-content-upload]')?.addEventListener('submit', async event => {
