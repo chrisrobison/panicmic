@@ -52,9 +52,11 @@ function renderAdminQueue(queue) {
       <div>
         <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
         <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
+        ${item.youtube_url ? `<a class="youtube-link" href="${escapeHtml(item.youtube_url)}" target="_blank" rel="noreferrer">YouTube: ${escapeHtml(item.youtube_title || 'karaoke video')}</a>` : '<small class="muted">No YouTube match attached</small>'}
       </div>
       <div class="queue-actions">
         ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
+        <button data-youtube="${item.request_id}">Find video</button>
       </div>
     </article>
   `).join('');
@@ -160,6 +162,11 @@ function bindEvents() {
       const data = await loadQueue();
       const next = data.queue.find(item => item.queue_status === 'pending' || item.queue_status === 'up_next');
       if (next) await api(`/api/requests/${next.request_id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'now_singing' }) });
+    }
+    const youtube = event.target.closest('[data-youtube]');
+    if (youtube) {
+      await api(`/api/requests/${youtube.dataset.youtube}/youtube`, { method: 'POST', body: JSON.stringify({}) });
+      await loadQueue();
     }
     const provision = event.target.closest('[data-provision]');
     if (provision) {

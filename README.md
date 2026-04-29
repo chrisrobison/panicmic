@@ -14,6 +14,7 @@ Full-stack multi-tenant karaoke night management app for bars and KJs, implement
 - REST API plus Server-Sent Events for live queue, request, announcement, and display updates
 - Base-path support for installs at `/`, `/nextup/public`, or another mounted path
 - Tenant-scoped content uploads served through `/files/*` from `/content/<tenant-slug>`
+- Optional YouTube karaoke video matching for song requests
 - Security controls: secure sessions, CSRF token checks, public request rate limiting, PHP `password_hash`, parameterized SQL, tenant-domain validation, escaping in all pages
 
 ## Requirements
@@ -162,3 +163,21 @@ KJs can upload images, videos, audio, and PDFs from `Admin -> Content`. Files ar
 ```
 
 The public route `/files/<filename>` maps to the current tenant's content folder after hostname tenant resolution, so `bluebird.test/files/logo.png` and `neon.test/files/logo.png` are isolated even if the filename is the same. Uploaded content is ignored by Git; only `content/.gitkeep` is tracked.
+
+## YouTube Karaoke Matching
+
+Set these in `.env` to attach YouTube karaoke videos to requests:
+
+```env
+YOUTUBE_API_KEY=<youtube-data-api-key>
+YOUTUBE_AUTO_ATTACH=true
+```
+
+When enabled, new song requests automatically search YouTube for `<artist> <title> karaoke`, request embeddable videos ordered by view count, and attach the top result to the KJ queue item. KJs can also retry matching from the queue with `Find video`.
+
+After pulling this feature into an existing tenant database, run:
+
+```bash
+php scripts/migrate.php tenant nextup_bluebird
+php scripts/migrate.php tenant nextup_neon
+```

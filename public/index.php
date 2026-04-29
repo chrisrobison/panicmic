@@ -11,6 +11,7 @@ use NextUp\Services\QueueService;
 use NextUp\Services\SessionService;
 use NextUp\Services\SettingsService;
 use NextUp\Services\SongService;
+use NextUp\Services\YouTubeService;
 use NextUp\Support\Env;
 use NextUp\Support\Request;
 use NextUp\Support\Response;
@@ -87,6 +88,7 @@ try {
         $path === '/api/queue' && $method === 'GET' => Response::json(['queue' => QueueService::queue($db, (int)$session['id']), 'display' => DisplayService::state($db, (int)$session['id'])]),
         in_array($path, ['/api/requests', '/requests'], true) && $method === 'POST' => submitRequest($db, $tenant, $session, $settings),
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => updateStatus($db, $tenant, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/requests/(\d+)/youtube$#', $path, $m) && $method === 'POST' => attachYouTubeVideo($db, $session, (int)$m[1]),
         $path === '/api/queue/reorder' && $method === 'PATCH' => reorderQueue($db, $tenant, $session),
         $path === '/api/display/state' && $method === 'POST' => updateDisplay($db, $tenant, $session),
         $path === '/api/announcements' && $method === 'POST' => createAnnouncement($db, $tenant, $session),
@@ -160,9 +162,43 @@ function submitRequest(PDO $db, array $tenant, array $session, array $settings):
     }
     $token = $_SESSION['requester_token'] ??= bin2hex(random_bytes(32));
     $requestId = QueueService::submit($db, (int)$session['id'], $input, $token, (bool)($settings['prevent_duplicate_requests'] ?? true));
+    autoAttachYouTubeVideo($db, $requestId);
     EventBus::publish($db, 'request:created', ['requestId' => $requestId]);
     EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'])]);
     Response::json(['requestId' => $requestId]);
+}
+
+function autoAttachYouTubeVideo(PDO $db, int $requestId): void
+{
+    if (!YouTubeService::isEnabled()) {
+        return;
+    }
+    $song = QueueService::requestSong($db, $requestId, (int)$session['id']);
+    if (!$song) {
+        return;
+    }
+    $video = YouTubeService::findKaraokeVideo($song);
+    if ($video) {
+        YouTubeService::attachToRequest($db, $requestId, $video);
+    }
+}
+
+/** @param array<string,mixed> $session */
+function attachYouTubeVideo(PDO $db, array $session, int $requestId): never
+{
+    Auth::requireTenantRole('kj', 'tenant_admin');
+    $song = QueueService::requestSong($db, $requestId);
+    if (!$song) {
+        Response::json(['error' => 'Request not found'], 404);
+    }
+    $video = YouTubeService::findKaraokeVideo($song);
+    if (!$video) {
+        Response::json(['error' => 'No YouTube karaoke video found or YouTube is not configured'], 404);
+    }
+    YouTubeService::attachToRequest($db, $requestId, $video);
+    EventBus::publish($db, 'request:youtube_attached', ['requestId' => $requestId, 'video' => $video]);
+    EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'])]);
+    Response::json(['video' => $video]);
 }
 
 /** @param array<string,mixed> $tenant @param array<string,mixed> $session */

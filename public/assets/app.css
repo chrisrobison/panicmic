@@ -79,6 +79,8 @@ h1, h2, p { margin-top: 0; }
 .song-result { text-align: left; }
 .content-card { display: grid; grid-template-columns: minmax(0, 1fr) 90px 80px; gap: 12px; align-items: center; }
 .content-card a { color: var(--accent); font-weight: 700; }
+.youtube-link { color: var(--accent); font-weight: 700; display: inline-block; margin-top: 6px; }
+.muted { color: var(--muted); }
 .song-result.selected { border-color: var(--primary); }
 .queue-strip, .workspace { padding: 32px max(18px, 6vw); }
 .workspace.narrow { max-width: 760px; margin: 0 auto; }

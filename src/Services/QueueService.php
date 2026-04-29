@@ -14,6 +14,7 @@ final class QueueService
         $stmt = $db->prepare(
             "SELECT qi.id queue_item_id, qi.position, qi.status queue_status,
                     sr.id request_id, sr.party_type, sr.notes, sr.status request_status, sr.created_at,
+                    sr.youtube_video_id, sr.youtube_title, sr.youtube_channel_title, sr.youtube_url, sr.youtube_matched_at,
                     s.id singer_id, s.display_name singer_name,
                     songs.id song_id, songs.title, songs.artist, songs.genre, songs.decade
              FROM queue_items qi
@@ -25,6 +26,27 @@ final class QueueService
         );
         $stmt->execute([$sessionId]);
         return $stmt->fetchAll();
+    }
+
+    /** @return array<string,mixed>|null */
+    public static function requestSong(PDO $db, int $requestId, ?int $sessionId = null): ?array
+    {
+        $where = 'sr.id = ?';
+        $params = [$requestId];
+        if ($sessionId !== null) {
+            $where .= ' AND sr.session_id = ?';
+            $params[] = $sessionId;
+        }
+        $stmt = $db->prepare(
+            'SELECT sr.id request_id, songs.id song_id, songs.title, songs.artist
+             FROM song_requests sr
+             JOIN songs ON songs.id = sr.song_id
+             WHERE ' . $where . '
+             LIMIT 1'
+        );
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+        return $row ?: null;
     }
 
     /** @param array<string,mixed> $data */
