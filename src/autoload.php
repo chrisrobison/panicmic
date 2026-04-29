@@ -12,3 +12,5 @@ spl_autoload_register(static function (string $class): void {
         require $path;
     }
 });
+
+require_once __DIR__ . '/Support/Response.php';
