@@ -15,6 +15,8 @@ $bodyClass = str_replace('-', ' ', $page);
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= e($title) ?></title>
   <meta name="csrf-token" content="<?= e($csrf) ?>">
+  <meta name="app-base-path" content="<?= e($basePath) ?>">
+  <meta name="app-page" content="<?= e($page) ?>">
   <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
   <style>
     :root { --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>; --accent: <?= e($tenant['accent_color'] ?? '#facc15') ?>; }
@@ -36,13 +38,6 @@ $bodyClass = str_replace('-', ' ', $page);
   <main data-page="<?= e($page) ?>">
     <?php require __DIR__ . "/pages/{$page}.php"; ?>
   </main>
-  <script>
-    window.NEXTUP = {
-      csrf: <?= json_encode($csrf, JSON_THROW_ON_ERROR) ?>,
-      page: <?= json_encode($page, JSON_THROW_ON_ERROR) ?>,
-      basePath: <?= json_encode($basePath, JSON_THROW_ON_ERROR) ?>
-    };
-  </script>
   <script src="<?= e(Url::path('/assets/app.js')) ?>"></script>
 </body>
 </html>

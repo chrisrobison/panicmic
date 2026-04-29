@@ -1,6 +1,11 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-const basePath = (window.NEXTUP?.basePath || '').replace(/\/$/, '');
+const appConfig = {
+  csrf: document.querySelector('meta[name="csrf-token"]')?.content || '',
+  page: document.querySelector('meta[name="app-page"]')?.content || '',
+  basePath: document.querySelector('meta[name="app-base-path"]')?.content || ''
+};
+const basePath = appConfig.basePath.replace(/\/$/, '');
 
 function url(path) {
   const normalized = `/${String(path || '').replace(/^\/+/, '')}`;
@@ -10,7 +15,7 @@ function url(path) {
 async function api(path, options = {}) {
   const headers = { 'Accept': 'application/json', ...(options.headers || {}) };
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  if (!['GET', undefined].includes(options.method)) headers['X-CSRF-Token'] = window.NEXTUP.csrf;
+  if (!['GET', undefined].includes(options.method)) headers['X-CSRF-Token'] = appConfig.csrf;
   const response = await fetch(url(path), { ...options, headers });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Request failed');
