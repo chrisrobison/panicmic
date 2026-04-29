@@ -134,9 +134,11 @@ If your Apache vhost points at the project root and the app is reached at `/next
 APP_BASE_PATH=/nextup/public
 ```
 
-The included `public/.htaccess` rewrites non-file requests back to `public/index.php` when `AllowOverride All` is enabled:
+The included `public/.htaccess` uses `mod_rewrite` to route clean URLs through `public/index.php`. Enable rewrite support in Apache, then allow `.htaccess` in the public directory:
 
 ```apache
+LoadModule rewrite_module libexec/apache2/mod_rewrite.so
+
 <Directory "/Users/cdr/Projects/nextup/public">
     AllowOverride All
     Require all granted
