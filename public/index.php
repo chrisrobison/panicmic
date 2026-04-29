@@ -11,6 +11,7 @@ use NextUp\Services\QueueService;
 use NextUp\Services\SessionService;
 use NextUp\Services\SettingsService;
 use NextUp\Services\SongService;
+use NextUp\Services\TenantBrandingService;
 use NextUp\Services\YouTubeService;
 use NextUp\Support\Env;
 use NextUp\Support\Request;
@@ -94,6 +95,8 @@ try {
         $path === '/api/announcements' && $method === 'POST' => createAnnouncement($db, $tenant, $session),
         $path === '/api/admin/login' && $method === 'POST' => tenantLogin($db),
         $path === '/api/admin/logout' && $method === 'POST' => logoutTenant(),
+        $path === '/api/admin/branding' && $method === 'GET' => tenantBranding($tenant),
+        $path === '/api/admin/branding' && $method === 'POST' => updateTenantBranding($tenant),
         $path === '/api/admin/songs' && $method === 'POST' => createSong($db, $tenant),
         (bool)preg_match('#^/api/admin/songs/(\d+)$#', $path, $m) && $method === 'PATCH' => updateSong($db, $tenant, (int)$m[1]),
         $path === '/api/admin/content' && $method === 'GET' => listContent($tenant),
@@ -124,6 +127,11 @@ function publicTenant(array $tenant): array
         'venueName' => $tenant['venue_name'],
         'nightName' => $tenant['night_name'],
         'logoUrl' => $tenant['logo_url'],
+        'profileImageUrl' => $tenant['profile_image_url'] ?? null,
+        'backgroundImageUrl' => $tenant['background_image_url'] ?? null,
+        'backgroundColor' => $tenant['background_color'] ?? '#101216',
+        'surfaceColor' => $tenant['surface_color'] ?? '#191d24',
+        'textColor' => $tenant['text_color'] ?? '#f5f7fb',
         'primaryColor' => $tenant['primary_color'],
         'accentColor' => $tenant['accent_color'],
         'timezone' => $tenant['timezone'],
@@ -174,7 +182,7 @@ function autoAttachYouTubeVideo(PDO $db, int $requestId): void
     if (!YouTubeService::isEnabled()) {
         return;
     }
-    $song = QueueService::requestSong($db, $requestId, (int)$session['id']);
+    $song = QueueService::requestSong($db, $requestId);
     if (!$song) {
         return;
     }
@@ -182,6 +190,21 @@ function autoAttachYouTubeVideo(PDO $db, int $requestId): void
     if ($video) {
         YouTubeService::attachToRequest($db, $requestId, $video);
     }
+}
+
+/** @param array<string,mixed> $tenant */
+function tenantBranding(array $tenant): never
+{
+    Auth::requireTenantRole('kj', 'tenant_admin');
+    Response::json(['branding' => TenantBrandingService::get(Connection::super(), (int)$tenant['id'])]);
+}
+
+/** @param array<string,mixed> $tenant */
+function updateTenantBranding(array $tenant): never
+{
+    Auth::requireTenantRole('tenant_admin');
+    TenantBrandingService::update(Connection::super(), (int)$tenant['id'], Request::input());
+    Response::json(['branding' => TenantBrandingService::get(Connection::super(), (int)$tenant['id'])]);
 }
 
 /** @param array<string,mixed> $session */

@@ -255,6 +255,15 @@ function bindEvents() {
     } catch (error) { $('[data-status]', event.target).textContent = error.message; }
   });
 
+  $('[data-branding-form]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    try {
+      await api('/api/admin/branding', { method: 'POST', body: JSON.stringify(formData(event.target)) });
+      $('[data-status]', event.target).textContent = 'Branding saved. Refreshing...';
+      setTimeout(() => location.reload(), 400);
+    } catch (error) { $('[data-status]', event.target).textContent = error.message; }
+  });
+
   $('[data-tenant-create]')?.addEventListener('submit', async event => {
     event.preventDefault();
     await api('/super/tenants', { method: 'POST', body: JSON.stringify(formData(event.target)) });
@@ -291,6 +300,20 @@ async function loadContentFiles() {
   }
 }
 
+async function loadBranding() {
+  const form = $('[data-branding-form]');
+  if (!form) return;
+  try {
+    const data = await api('/api/admin/branding');
+    Object.entries(data.branding || {}).forEach(([key, value]) => {
+      const field = form.elements.namedItem(key);
+      if (field) field.value = value || '';
+    });
+  } catch (error) {
+    $('[data-status]', form).textContent = error.message;
+  }
+}
+
 function startEvents() {
   if (!window.EventSource || location.pathname.startsWith(url('/super'))) return;
   const source = new EventSource(url('/api/events'));
@@ -303,4 +326,5 @@ bindEvents();
 loadQueue().catch(() => {});
 loadTenants();
 loadContentFiles();
+loadBranding();
 startEvents();

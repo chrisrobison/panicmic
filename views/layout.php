@@ -7,6 +7,9 @@ use NextUp\Support\Url;
 
 $title = $tenant['venue_name'] . ' - ' . $tenant['night_name'];
 $bodyClass = str_replace('-', ' ', $page);
+$logoUrl = !empty($tenant['logo_url']) ? (str_starts_with($tenant['logo_url'], '/files/') ? Url::path($tenant['logo_url']) : $tenant['logo_url']) : null;
+$profileImageUrl = !empty($tenant['profile_image_url']) ? (str_starts_with($tenant['profile_image_url'], '/files/') ? Url::path($tenant['profile_image_url']) : $tenant['profile_image_url']) : null;
+$backgroundImageUrl = !empty($tenant['background_image_url']) ? (str_starts_with($tenant['background_image_url'], '/files/') ? Url::path($tenant['background_image_url']) : $tenant['background_image_url']) : null;
 ?>
 <!doctype html>
 <html lang="en">
@@ -19,13 +22,20 @@ $bodyClass = str_replace('-', ' ', $page);
   <meta name="app-page" content="<?= e($page) ?>">
   <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
   <style>
-    :root { --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>; --accent: <?= e($tenant['accent_color'] ?? '#facc15') ?>; }
+    :root {
+      --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>;
+      --accent: <?= e($tenant['accent_color'] ?? '#facc15') ?>;
+      --bg: <?= e($tenant['background_color'] ?? '#101216') ?>;
+      --surface: <?= e($tenant['surface_color'] ?? '#191d24') ?>;
+      --text: <?= e($tenant['text_color'] ?? '#f5f7fb') ?>;
+      --tenant-bg-image: <?= $backgroundImageUrl ? 'url("' . e($backgroundImageUrl) . '")' : 'none' ?>;
+    }
   </style>
 </head>
 <body class="<?= e($page) ?>">
   <header class="topbar">
     <a class="brand" href="<?= e(Url::path('/')) ?>">
-      <?php if (!empty($tenant['logo_url'])): ?><img src="<?= e($tenant['logo_url']) ?>" alt=""><?php endif; ?>
+      <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt=""><?php endif; ?>
       <span><strong><?= e($tenant['venue_name']) ?></strong><small><?= e($tenant['night_name']) ?></small></span>
     </a>
     <nav>
@@ -34,6 +44,7 @@ $bodyClass = str_replace('-', ' ', $page);
       <a href="<?= e(Url::path('/admin/dashboard')) ?>">KJ</a>
       <a href="<?= e(Url::path('/display')) ?>">Display</a>
     </nav>
+    <?php if ($profileImageUrl): ?><img class="profile-pic" src="<?= e($profileImageUrl) ?>" alt=""><?php endif; ?>
   </header>
   <main data-page="<?= e($page) ?>">
     <?php require __DIR__ . "/pages/{$page}.php"; ?>
