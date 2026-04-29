@@ -35,28 +35,28 @@ For subdirectory installs, set `APP_BASE_PATH` in `.env` before opening the app.
 
 The seed creates two local tenants:
 
-- `bluebird.local:8000`
-- `neon.local:8000`
+- `bluebird.test:8000`
+- `neon.test:8000`
 
 Add these to `/etc/hosts`:
 
 ```text
-127.0.0.1 bluebird.local
-127.0.0.1 neon.local
-127.0.0.1 nextup.local
+127.0.0.1 bluebird.test
+127.0.0.1 neon.test
+127.0.0.1 nextup.test
 ```
 
 Open:
 
-- Public requests: `http://bluebird.local:8000/`
-- KJ dashboard: `http://bluebird.local:8000/admin/dashboard`
-- Projection: `http://bluebird.local:8000/display`
-- Super admin: `http://nextup.local:8000/super/tenants`
+- Public requests: `http://bluebird.test:8000/`
+- KJ dashboard: `http://bluebird.test:8000/admin/dashboard`
+- Projection: `http://bluebird.test:8000/display`
+- Super admin: `http://nextup.test:8000/super/tenants`
 
 Seeded logins:
 
-- Tenant admin/KJ: `admin@bluebird.local` / `password123`
-- Super admin: `super@nextup.local` / `password123`
+- Tenant admin/KJ: `admin@bluebird.test` / `password123`
+- Super admin: `super@nextup.test` / `password123`
 
 ## Local Multi-Hostname Development
 
@@ -65,11 +65,13 @@ Browsers include the port in the Host header. Tenant lookup normalizes hosts by 
 Use separate local names in `/etc/hosts` to test isolation:
 
 ```text
-127.0.0.1 bluebird.local
-127.0.0.1 neon.local
+127.0.0.1 bluebird.test
+127.0.0.1 neon.test
 ```
 
 Each hostname resolves to its own tenant record and database schema.
+
+Avoid `.local` hostnames for local development on macOS. `.local` is reserved for Bonjour/mDNS and can add about 5 seconds of DNS delay before the browser connects. The seed still registers `.local` aliases for compatibility, but `.test` is the fast local default.
 
 ## Database Layout
 
@@ -147,9 +149,9 @@ LoadModule rewrite_module libexec/apache2/mod_rewrite.so
 
 With that setup, use URLs such as:
 
-- `http://bluebird.local/nextup/public/`
-- `http://bluebird.local/nextup/public/admin/dashboard`
-- `http://bluebird.local/nextup/public/files/example.mp4`
+- `http://bluebird.test/nextup/public/`
+- `http://bluebird.test/nextup/public/admin/dashboard`
+- `http://bluebird.test/nextup/public/files/example.mp4`
 
 ## Tenant Content
 
@@ -159,4 +161,4 @@ KJs can upload images, videos, audio, and PDFs from `Admin -> Content`. Files ar
 /Users/cdr/Projects/nextup/content/<tenant-slug>/
 ```
 
-The public route `/files/<filename>` maps to the current tenant's content folder after hostname tenant resolution, so `bluebird.local/files/logo.png` and `neon.local/files/logo.png` are isolated even if the filename is the same. Uploaded content is ignored by Git; only `content/.gitkeep` is tracked.
+The public route `/files/<filename>` maps to the current tenant's content folder after hostname tenant resolution, so `bluebird.test/files/logo.png` and `neon.test/files/logo.png` are isolated even if the filename is the same. Uploaded content is ignored by Git; only `content/.gitkeep` is tracked.

@@ -18,7 +18,7 @@ if ($tenantMigration === false) {
 
 $superPassword = password_hash('password123', PASSWORD_DEFAULT);
 $super->prepare('INSERT IGNORE INTO super_admin_users (email, password_hash, display_name) VALUES (?, ?, ?)')
-    ->execute(['super@nextup.local', $superPassword, 'Super Admin']);
+    ->execute(['super@nextup.test', $superPassword, 'Super Admin']);
 
 $tenants = [
     [
@@ -26,7 +26,8 @@ $tenants = [
         'venue_name' => 'Bluebird Bar',
         'night_name' => 'Bluebird Karaoke',
         'database_name' => 'nextup_bluebird',
-        'domain' => 'bluebird.local',
+        'domain' => 'bluebird.test',
+        'aliases' => ['bluebird.local'],
         'primary_color' => '#23d18b',
         'accent_color' => '#ffd166',
     ],
@@ -35,7 +36,8 @@ $tenants = [
         'venue_name' => 'Neon Room',
         'night_name' => 'Neon Karaoke Club',
         'database_name' => 'nextup_neon',
-        'domain' => 'neon.local',
+        'domain' => 'neon.test',
+        'aliases' => ['neon.local'],
         'primary_color' => '#38bdf8',
         'accent_color' => '#f472b6',
     ],
@@ -60,6 +62,10 @@ foreach ($tenants as $tenant) {
     $tenantId = (int)$super->query("SELECT id FROM tenants WHERE slug = " . $super->quote($tenant['slug']))->fetchColumn();
     $super->prepare('INSERT IGNORE INTO tenant_domains (tenant_id, domain, is_primary) VALUES (?, ?, 1)')
         ->execute([$tenantId, $tenant['domain']]);
+    foreach ($tenant['aliases'] as $alias) {
+        $super->prepare('INSERT IGNORE INTO tenant_domains (tenant_id, domain, is_primary) VALUES (?, ?, 0)')
+            ->execute([$tenantId, $alias]);
+    }
 
     $super->exec("CREATE DATABASE IF NOT EXISTS `{$tenant['database_name']}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $db = Connection::tenant($tenant['database_name']);
