@@ -1,0 +1,97 @@
+<?php
+
+declare(strict_types=1);
+
+namespace NextUp\Http;
+
+use NextUp\Database\Connection;
+use NextUp\Services\SignupService;
+use NextUp\Support\Env;
+use NextUp\Support\Request;
+use NextUp\Support\Response;
+
+final class SignupController
+{
+    /**
+     * Public signup landing — rendered on the marketing / super-admin
+     * hostname (e.g. panicmic.com). Posts to {@see register}.
+     */
+    public static function page(): never
+    {
+        PageRenderer::render(
+            'signup',
+            [
+                'venue_name' => 'NextUp',
+                'night_name' => 'Get started',
+                'primary_color' => '#22c55e',
+                'accent_color' => '#facc15',
+            ],
+            ['id' => 0, 'name' => 'Signup'],
+        );
+    }
+
+    public static function register(): never
+    {
+        $superDb = Connection::super();
+        $input = Request::input();
+        try {
+            $result = SignupService::register($superDb, [
+                'venue_name' => (string)($input['venue_name'] ?? ''),
+                'email' => (string)($input['email'] ?? ''),
+                'subdomain' => (string)($input['subdomain'] ?? ''),
+                'night_name' => (string)($input['night_name'] ?? 'Karaoke Night'),
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            Response::json(['error' => $e->getMessage()], 400);
+        }
+
+        // In development (MAIL_DRIVER=log) the user can't click an email
+        // link, so surface the invite URL directly. In production we
+        // omit it; the email is the only path.
+        $payload = [
+            'ok' => true,
+            'tenant_id' => $result['tenant_id'],
+            'slug' => $result['slug'],
+            'next' => 'Check your email for the activation link.',
+        ];
+        if ((string)Env::get('MAIL_DRIVER', 'log') === 'log') {
+            $payload['invite_url'] = $result['invite_url'];
+        }
+        Response::json($payload, 201);
+    }
+
+    /**
+     * Invite acceptance page. The user clicks the email link, sets a
+     * password, and gets dropped into their tenant.
+     */
+    public static function acceptPage(): never
+    {
+        PageRenderer::render(
+            'signup-accept',
+            [
+                'venue_name' => 'NextUp',
+                'night_name' => 'Activate your account',
+                'primary_color' => '#22c55e',
+                'accent_color' => '#facc15',
+            ],
+            ['id' => 0, 'name' => 'Activate'],
+        );
+    }
+
+    public static function accept(): never
+    {
+        $superDb = Connection::super();
+        $input = Request::input();
+        try {
+            $result = SignupService::acceptInvite(
+                $superDb,
+                (string)($input['token'] ?? ''),
+                (string)($input['display_name'] ?? ''),
+                (string)($input['password'] ?? ''),
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::json(['error' => $e->getMessage()], 400);
+        }
+        Response::json(['ok' => true, 'tenant' => $result], 200);
+    }
+}

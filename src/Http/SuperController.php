@@ -6,6 +6,7 @@ namespace NextUp\Http;
 
 use NextUp\Auth\Auth;
 use NextUp\Database\Connection;
+use NextUp\Services\BillingService;
 use NextUp\Services\ContentService;
 use NextUp\Services\SharedCatalogService;
 use NextUp\Support\Impersonation;
@@ -103,6 +104,22 @@ final class SuperController
         if (preg_match('#^/api/super/catalog/(\d+)$#', $path, $m) && $method === 'DELETE') {
             SharedCatalogService::delete($db, (int)$m[1]);
             Response::json(['ok' => true]);
+        }
+        if ($path === '/api/super/plans' && $method === 'GET') {
+            Response::json(['plans' => BillingService::plans($db)]);
+        }
+        if (preg_match('#^/api/super/tenants/(\d+)/subscription$#', $path, $m) && $method === 'GET') {
+            Response::json(['subscription' => BillingService::subscription($db, (int)$m[1])]);
+        }
+        if (preg_match('#^/api/super/tenants/(\d+)/subscription$#', $path, $m) && $method === 'PATCH') {
+            $input = Request::input();
+            if (isset($input['plan_code'])) {
+                BillingService::setPlan($db, (int)$m[1], (string)$input['plan_code']);
+            }
+            if (isset($input['subscription_status'])) {
+                BillingService::setStatus($db, (int)$m[1], (string)$input['subscription_status']);
+            }
+            Response::json(['subscription' => BillingService::subscription($db, (int)$m[1])]);
         }
         Response::json(['error' => 'Not found'], 404);
     }

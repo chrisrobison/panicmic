@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use NextUp\Auth\Auth;
 use NextUp\Database\Connection;
+use NextUp\Services\BillingService;
 use NextUp\Http\AuthController;
 use NextUp\Http\BrandingController;
 use NextUp\Http\ContentController;
@@ -12,6 +13,7 @@ use NextUp\Http\PageRenderer;
 use NextUp\Http\QueueController;
 use NextUp\Http\SessionController;
 use NextUp\Http\SettingsController;
+use NextUp\Http\SignupController;
 use NextUp\Http\SongController;
 use NextUp\Http\SuperController;
 use NextUp\Services\ContentService;
@@ -21,6 +23,7 @@ use NextUp\Services\SessionService;
 use NextUp\Services\SettingsService;
 use NextUp\Services\SongService;
 use NextUp\Support\Env;
+use NextUp\Support\ErrorReporter;
 use NextUp\Support\Request;
 use NextUp\Support\Response;
 use NextUp\Support\Security;
@@ -29,6 +32,7 @@ use NextUp\Tenant\TenantContext;
 require dirname(__DIR__) . '/src/autoload.php';
 
 Env::load(dirname(__DIR__) . '/.env');
+ErrorReporter::install();
 Security::startSession();
 Security::headers();
 
@@ -49,6 +53,24 @@ try {
     }
     if (str_starts_with($path, '/super') || str_starts_with($path, '/api/super')) {
         SuperController::dispatch($path, $method);
+    }
+
+    // Public signup flow (shared across all hostnames; resolves against
+    // the super DB). These run before tenant resolution because
+    // /signup lives on the marketing host without a tenant context.
+    if ($path === '/signup' && $method === 'GET') {
+        SignupController::page();
+    }
+    if ($path === '/api/signup' && $method === 'POST') {
+        Security::requireCsrf();
+        SignupController::register();
+    }
+    if ($path === '/signup/accept' && $method === 'GET') {
+        SignupController::acceptPage();
+    }
+    if ($path === '/api/signup/accept' && $method === 'POST') {
+        Security::requireCsrf();
+        SignupController::accept();
     }
     if (!$tenantContext) {
         Response::json(['error' => 'Tenant context required'], 400);
@@ -83,6 +105,23 @@ try {
 
     if ($method !== 'GET') {
         Security::requireCsrf();
+    }
+
+    // Paywall: write actions are blocked when the tenant subscription
+    // has lapsed. Read paths (browsing the catalog, watching the queue)
+    // stay open so a singer can still see what's going on while the
+    // owner sorts out billing.
+    $isMutation = in_array($method, ['POST', 'PATCH', 'DELETE'], true);
+    $isBillingExempt = in_array($path, [
+        '/api/admin/login', '/api/admin/logout',
+        '/api/admin/end-impersonation', '/admin/end-impersonation',
+        '/api/admin/branding', '/api/admin/settings',
+    ], true);
+    if ($isMutation && !$isBillingExempt && !BillingService::hasAccess($tenant)) {
+        Response::json([
+            'error' => 'This venue\'s subscription is inactive. Visit /super or contact support to reactivate.',
+            'subscription_status' => $tenant['subscription_status'] ?? 'inactive',
+        ], 402);
     }
 
     match (true) {
@@ -149,5 +188,10 @@ try {
     };
 } catch (Throwable $error) {
     $status = $error instanceof InvalidArgumentException ? 400 : 500;
+    // Only ship 5xx to the error tracker; 400-class errors are user
+    // input problems, not server bugs.
+    if ($status >= 500) {
+        ErrorReporter::report($error, "Front controller {$method} {$path}");
+    }
     Response::json(['error' => $error->getMessage()], $status);
 }

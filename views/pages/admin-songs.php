@@ -31,7 +31,7 @@ $current = 'songs';
           <label>Decade<input name="decade" type="number" min="1900" max="2090" step="10"></label>
           <label>Popularity<input name="popularity" type="number" min="0" value="0"></label>
           <label>External ID<input name="external_id"></label>
-          <label>Video URL<input name="video_url" type="url" placeholder="https://..."></label>
+          <label>Video URL<input name="video_url" placeholder="https://… or /files/song.mp4"><small class="muted">Self-hosted (<code>/files/yourfile.mp4</code>) plays without YouTube quota.</small></label>
           <label>Provider
             <select name="video_provider">
               <option value="">Custom / none</option>

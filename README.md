@@ -134,6 +134,115 @@ php scripts/migrate.php status tenants
 php scripts/migrate.php super --dry-run
 ```
 
+## Self-Serve SaaS Deployment (panicmic.com)
+
+NextUp is intended for self-serve hosting at `panicmic.com` with each
+venue getting its own subdomain (`bluebird.panicmic.com`,
+`neon.panicmic.com`, …). The marketing landing + signup flow lives on
+the apex (`panicmic.com`); tenant traffic resolves by subdomain via
+`tenant_domains`.
+
+### nginx vhost (one block, wildcard subdomain)
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name panicmic.com *.panicmic.com;
+
+    ssl_certificate     /etc/letsencrypt/live/panicmic.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/panicmic.com/privkey.pem;
+
+    root /var/www/nextup/public;
+    index index.php;
+
+    location / {
+        try_files $uri /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+    }
+}
+```
+
+Wildcard TLS via Let's Encrypt:
+
+```bash
+certbot certonly --dns-cloudflare --dns-cloudflare-credentials ~/.cf.ini \
+  -d panicmic.com -d '*.panicmic.com'
+```
+
+### Production .env
+
+```env
+APP_ENV=production
+APP_BASE_PATH=
+SESSION_SECRET=<random 32 bytes hex>
+CSRF_SECRET=<random 32 bytes hex>
+TRUST_PROXY=true
+ALLOWED_HOSTS=panicmic.com,*.panicmic.com
+
+SUPER_DB_HOST=127.0.0.1
+SUPER_DB_USER=nextup_app
+SUPER_DB_PASSWORD=<runtime user, no CREATE>
+SUPER_DB_NAME=nextup_super
+
+TENANT_DB_HOST=127.0.0.1
+TENANT_DB_USER=nextup_app
+TENANT_DB_PASSWORD=<same as above>
+TENANT_DB_PREFIX=nextup_
+
+SIGNUP_ROOT_DOMAIN=panicmic.com
+
+MAIL_DRIVER=postmark
+MAIL_FROM=hello@panicmic.com
+MAIL_FROM_NAME=Panic Mic
+POSTMARK_TOKEN=<from Postmark>
+
+SENTRY_DSN=https://<key>@oXXX.ingest.sentry.io/<project>
+
+YOUTUBE_API_KEY=<youtube data api>
+YOUTUBE_AUTO_ATTACH=true
+```
+
+### Bootstrap on a fresh server
+
+```bash
+git clone … /var/www/nextup
+cd /var/www/nextup
+cp .env.example .env && vi .env       # fill in production values
+
+# Run as a DBA user with CREATE rights (separate from the app user).
+mysql -uroot -e "CREATE DATABASE nextup_super CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+php scripts/migrate.php super
+
+# Seed the super-admin login.
+php scripts/seed.php   # or run the manual SQL — see scripts/seed.php
+
+# Optional: import the shared catalog you maintain on your laptop.
+php scripts/import-shared-catalog.php seeds/songs.csv
+
+# Make /content writable by PHP-FPM.
+chown -R www-data:www-data content storage
+```
+
+After this, visit `https://panicmic.com/signup` to create a first tenant
+and verify the flow end-to-end. New tenants land with a 14-day
+`trialing` subscription; flip to `active` from the super-admin once
+billing is configured.
+
+### Stripe (when ready)
+
+The billing scaffolding is in place but Stripe Checkout / webhooks are
+not wired yet. Until then, super-admin can manually set
+`tenants.subscription_status` from the API or directly in SQL. When
+Stripe is added: hook `customer.subscription.updated` →
+`BillingService::setStatus`, and `checkout.session.completed` →
+record the `stripe_customer_id` / `stripe_subscription_id` against
+the tenant.
+
 ## Production Deployment Notes
 
 Place the app behind Nginx, Apache, or Caddy with PHP-FPM. Forward the original host:

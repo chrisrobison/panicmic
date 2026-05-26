@@ -50,11 +50,15 @@ abstract class DatabaseTestCase extends TestCase
     private function truncate(): void
     {
         // Tenant tables — order matters for FKs.
-        foreach (['queue_items', 'song_requests', 'announcements', 'singers', 'songs', 'audit_log', 'settings', 'payments_tips', 'display_state', 'realtime_events', 'karaoke_sessions', 'users'] as $table) {
-            $this->tenantDb->exec("DELETE FROM `{$table}`");
+        foreach (['queue_items', 'song_requests', 'announcements', 'singers', 'songs', 'audit_log', 'settings', 'payments_tips', 'display_screens', 'display_state', 'realtime_events', 'karaoke_sessions', 'users'] as $table) {
+            try {
+                $this->tenantDb->exec("DELETE FROM `{$table}`");
+            } catch (\Throwable) {
+                // Table may not exist in older schemas.
+            }
         }
-        // Super tables (leave tenants/tenant_domains alone — we re-seed them).
-        foreach (['shared_songs', 'provisioning_jobs', 'super_admin_users', 'login_attempts'] as $table) {
+        // Super tables (leave tenants/tenant_domains for re-seed).
+        foreach (['shared_songs', 'provisioning_jobs', 'super_admin_users', 'login_attempts', 'tenant_invites'] as $table) {
             try {
                 $this->superDb->exec("DELETE FROM `{$table}`");
             } catch (\Throwable) {

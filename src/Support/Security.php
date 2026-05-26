@@ -27,7 +27,31 @@ final class Security
         header('X-Frame-Options: SAMEORIGIN');
         header('X-Content-Type-Options: nosniff');
         header('Referrer-Policy: same-origin');
-        header("Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; object-src 'none'");
+        $nonce = self::styleNonce();
+        // YouTube IFrame Player needs script + frame access; everything
+        // else stays same-origin.
+        $csp = "default-src 'self'; "
+             . "script-src 'self' https://www.youtube.com https://s.ytimg.com; "
+             . "connect-src 'self'; "
+             . "img-src 'self' data: https:; "
+             . "style-src 'self' 'nonce-{$nonce}'; "
+             . "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
+             . "object-src 'none'";
+        header('Content-Security-Policy: ' . $csp);
+    }
+
+    /**
+     * Per-request nonce attached to the single inline <style> block in
+     * views/layout.php. Stable for the request, fresh on each new
+     * request, never reused across responses.
+     */
+    public static function styleNonce(): string
+    {
+        static $nonce = null;
+        if ($nonce === null) {
+            $nonce = base64_encode(random_bytes(16));
+        }
+        return $nonce;
     }
 
     public static function csrfToken(): string

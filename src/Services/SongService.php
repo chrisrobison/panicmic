@@ -287,8 +287,12 @@ final class SongService
         if ($url === '') {
             return null;
         }
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
-            throw new \InvalidArgumentException('Catalog URLs must be valid URLs');
+        // Allow tenant-local /files/ paths in addition to absolute URLs.
+        // These resolve through Url::path() at render time so they work
+        // under subdirectory installs.
+        $isLocal = str_starts_with($url, '/files/');
+        if (!$isLocal && !filter_var($url, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException('Catalog URLs must be a full URL or a /files/… path');
         }
         return substr($url, 0, 512);
     }

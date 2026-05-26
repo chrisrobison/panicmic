@@ -24,7 +24,13 @@ final class TenantContext
         if ($host === '' || !self::allowed($host)) {
             Response::json(['error' => 'Unrecognized host'], 400);
         }
-        if (str_starts_with($path, '/super') || str_starts_with($path, '/api/super') || str_starts_with($path, '/assets') || $path === '/health') {
+        if (str_starts_with($path, '/super')
+            || str_starts_with($path, '/api/super')
+            || str_starts_with($path, '/signup')
+            || str_starts_with($path, '/api/signup')
+            || str_starts_with($path, '/assets')
+            || $path === '/health'
+        ) {
             return null;
         }
 

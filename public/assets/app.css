@@ -138,6 +138,17 @@ h1, h2, p { margin-top: 0; }
 .display-lower-third strong { font-weight: 900; }
 .display-lower-third span { color: var(--accent); font-size: .7em; }
 .display-announcement { position: fixed; inset: auto 4vw 4vh; padding: 28px; border-radius: 8px; background: var(--accent); color: #111; font-size: 42px; font-weight: 900; text-align: center; }
+
+.signup-shell { display: grid; place-items: center; min-height: 90vh; padding: 32px 16px; }
+.signup-card { width: 100%; max-width: 460px; background: rgba(25,29,36,.85); border: 1px solid var(--border); border-radius: 12px; padding: 28px; display: flex; flex-direction: column; gap: 14px; }
+.signup-card h1 { margin: 0; font-size: 28px; }
+.signup-card form { display: flex; flex-direction: column; gap: 12px; }
+.signup-card label { display: flex; flex-direction: column; gap: 6px; }
+.subdomain-row { display: flex; gap: 8px; align-items: center; }
+.subdomain-row input { flex: 1; }
+.signup-status { white-space: pre-line; min-height: 1.2em; }
+.signup-status.success { color: var(--primary); }
+.signup-status.error { color: #f87171; }
 .qr svg { width: 100%; height: auto; background: white; padding: 10px; border-radius: 8px; }
 
 /* Super-admin / KJ impersonation banner */

@@ -151,7 +151,9 @@ function syncDisplayPlayer(current, display = {}) {
   }
 
   const ytId = display.youtube_video_id || extractYouTubeId(display.youtube_url || current?.youtube_url || '');
-  const videoUrl = display.song_video_url || '';
+  // Prefer self-hosted MP4 (durable, no quota) over YouTube when both
+  // are available on the song.
+  const videoUrl = resolveVideoUrl(display.song_video_url || '');
 
   if (ytId) {
     showYouTube(ytId);
@@ -257,6 +259,17 @@ function extractYouTubeId(url) {
   if (!url) return null;
   const m = String(url).match(/(?:v=|youtu\.be\/|embed\/)([\w-]{6,})/);
   return m ? m[1] : null;
+}
+
+/**
+ * Self-hosted video URLs stored as "/files/name.mp4" need the base-path
+ * prefix at render time; full URLs pass through untouched.
+ */
+function resolveVideoUrl(raw) {
+  if (!raw) return '';
+  if (/^(?:https?:)?\/\//i.test(raw)) return raw;
+  if (raw.startsWith('/')) return url(raw);
+  return raw;
 }
 
 function qrSvg(text) {
@@ -922,6 +935,45 @@ function bindEvents() {
     await api('/api/admin/sessions/start', { method: 'POST', body: JSON.stringify({ name }) });
     location.reload();
   });
+
+  // Signup flow
+  $('[data-signup-form]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const status = $('[data-signup-status]', event.target);
+    status.textContent = 'Creating your venue…';
+    try {
+      const data = await api('/api/signup', { method: 'POST', body: JSON.stringify(formData(event.target)) });
+      let msg = `Venue created. ${data.next || ''}`;
+      if (data.invite_url) msg += `\n\nDev mode — activate here: ${data.invite_url}`;
+      status.textContent = msg;
+      status.classList.add('success');
+    } catch (e) {
+      status.textContent = e.message || 'Signup failed.';
+      status.classList.add('error');
+    }
+  });
+
+  $('[data-signup-accept]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const status = $('[data-signup-status]', event.target);
+    status.textContent = 'Activating…';
+    try {
+      const data = await api('/api/signup/accept', { method: 'POST', body: JSON.stringify(formData(event.target)) });
+      status.textContent = `Activated. Redirecting to ${data.tenant.slug}…`;
+      // Tenant-specific URL: the user is currently on the marketing host
+      // but their account lives on their venue's subdomain.
+      setTimeout(() => { location.href = `/admin/login?email=${encodeURIComponent(data.tenant.email)}`; }, 600);
+    } catch (e) {
+      status.textContent = e.message || 'Activation failed.';
+      status.classList.add('error');
+    }
+  });
+
+  // Carry ?token=… from the invite link into the hidden field.
+  const acceptToken = $('[data-token-from-query]');
+  if (acceptToken) {
+    acceptToken.value = new URLSearchParams(location.search).get('token') || '';
+  }
 
   // Display screens settings form.
   $('[data-display-screens-form]')?.addEventListener('submit', async event => {

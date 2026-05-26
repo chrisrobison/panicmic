@@ -17,3 +17,6 @@ tools/
 # against seeds/songs.csv on your own machine)
 seeds/songs.csv
 seeds/songs.json
+
+# Local mail log, error log, etc.
+storage/

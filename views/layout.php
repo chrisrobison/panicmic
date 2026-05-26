@@ -26,7 +26,7 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <meta name="app-tenant-slug" content="<?= e($tenant['slug'] ?? '') ?>">
   <meta name="app-session-id" content="<?= e((string)($session['id'] ?? '')) ?>">
   <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
-  <style>
+  <style nonce="<?= e(\NextUp\Support\Security::styleNonce()) ?>">
     :root {
       --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>;
       --accent: <?= e($tenant['accent_color'] ?? '#facc15') ?>;
