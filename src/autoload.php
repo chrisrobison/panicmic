@@ -14,3 +14,4 @@ spl_autoload_register(static function (string $class): void {
 });
 
 require_once __DIR__ . '/Support/Response.php';
+require_once __DIR__ . '/Support/helpers.php';
