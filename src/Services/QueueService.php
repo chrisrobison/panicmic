@@ -139,7 +139,7 @@ final class QueueService
                 $singerId,
                 $songId,
                 $sharedSongId,
-                in_array($data['party_type'] ?? 'solo', ['solo', 'duet', 'group'], true) ? $data['party_type'] : 'solo',
+                in_array($data['party_type'] ?? 'solo', ['solo', 'duet', 'group'], true) ? ($data['party_type'] ?? 'solo') : 'solo',
                 trim((string)($data['notes'] ?? '')) ?: null,
                 $requesterToken,
             ]);

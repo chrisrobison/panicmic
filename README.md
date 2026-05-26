@@ -1,5 +1,7 @@
 # NextUp Karaoke SaaS PHP
 
+[![CI](https://github.com/chrisrobison/nextup/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisrobison/nextup/actions/workflows/ci.yml)
+
 Full-stack multi-tenant karaoke night management app for bars and KJs, implemented in PHP with PDO and MySQL/MariaDB. Tenants are selected by the incoming hostname, with a super-admin database for tenant lookup and isolated tenant schemas.
 
 ## Features
@@ -8,7 +10,7 @@ Full-stack multi-tenant karaoke night management app for bars and KJs, implement
 - Tenant branding, settings, timezone, signup modes, public request URL, and projection URL
 - Public singer song search, request submission, queue position, update, and cancel flows
 - KJ dashboard with queue status controls, drag-and-drop reorder, manual requests, announcements, and display state controls
-- Song catalog CRUD, CSV import/export hooks, and search filters
+- Song catalog CRUD with CSV export, YouTube playlist import, and search filters
 - Fullscreen projection UI with live SSE updates, QR code, queue, announcements, clean-stage, and idle modes
 - Super-admin tenant creation, domain management, provisioning, migrations, and initial admin creation
 - REST API plus Server-Sent Events for live queue, request, announcement, and display updates
@@ -105,6 +107,33 @@ php scripts/migrate.php super
 php scripts/migrate.php tenant nextup_bluebird
 ```
 
+## Developer Workflow
+
+`make` is the entry point. Dev tools (PHPUnit, PHPStan) ship as PHARs
+downloaded into `tools/` on demand — there is no `composer.json` and no
+`vendor/` directory.
+
+```bash
+make tools     # one-time, downloads phpunit.phar + phpstan.phar
+make lint      # php -l across src/, public/, scripts/
+make stan      # static analysis at level 5
+make test      # PHPUnit (requires a local MySQL for DB-backed tests)
+make check     # all three; what CI runs
+```
+
+The migration runner tracks applied files in a `schema_migrations`
+table per database (auto-created on first run). On its first run
+against an existing dev or production database it bootstraps the ledger
+by marking every migration on disk as applied without re-executing.
+
+```bash
+php scripts/migrate.php super
+php scripts/migrate.php tenant nextup_bluebird
+php scripts/migrate.php tenants                 # iterate all tenants
+php scripts/migrate.php status tenants
+php scripts/migrate.php super --dry-run
+```
+
 ## Production Deployment Notes
 
 Place the app behind Nginx, Apache, or Caddy with PHP-FPM. Forward the original host:
@@ -128,6 +157,24 @@ CSRF_SECRET=<strong secret>
 Only domains present in `tenant_domains` are accepted for tenant traffic. For proxy deployments, keep `TRUST_PROXY=true` only when the app is reachable exclusively through the trusted proxy.
 
 Point the web root at `public/`. All routes are handled by `public/index.php`.
+
+### MySQL privileges
+
+The runtime app does not need `CREATE` privileges. Provision tenant
+databases ahead of time and grant the app user only the privileges it
+needs against existing schemas:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE
+  ON `nextup_super`.* TO 'nextup_app'@'%';
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE
+  ON `nextup_<tenant>`.* TO 'nextup_app'@'%';
+```
+
+Run migrations with a separate user that has `CREATE`/`ALTER`/`DROP`,
+either via `scripts/migrate.php` from a deploy host or by handing the
+migration SQL to a DBA. Tenant provisioning that creates new databases
+should run as the migration user, not the runtime app user.
 
 ## Apache Under a Subdirectory
 

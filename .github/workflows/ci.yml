@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4']
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: nextup_super
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo, pdo_mysql, json, fileinfo
+          coverage: none
+          tools: none
+
+      - name: Cache dev tool phars
+        uses: actions/cache@v4
+        with:
+          path: tools
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile') }}
+
+      - name: Download phars
+        run: make tools
+
+      - name: Write test .env
+        run: |
+          cat > .env <<EOF
+          APP_ENV=test
+          APP_BASE_PATH=
+          SESSION_NAME=nextup_sid
+          SESSION_SECRET=ci-session-secret
+          CSRF_SECRET=ci-csrf-secret
+          TRUST_PROXY=false
+          ALLOWED_HOSTS=test.local,localhost,127.0.0.1
+          SUPER_DB_HOST=127.0.0.1
+          SUPER_DB_PORT=3306
+          SUPER_DB_USER=root
+          SUPER_DB_PASSWORD=root
+          SUPER_DB_NAME=nextup_super
+          TENANT_DB_HOST=127.0.0.1
+          TENANT_DB_PORT=3306
+          TENANT_DB_USER=root
+          TENANT_DB_PASSWORD=root
+          TENANT_DB_PREFIX=nextup_
+          EOF
+
+      - name: Wait for MySQL
+        run: |
+          for i in {1..30}; do
+            mysqladmin ping -h 127.0.0.1 -uroot -proot --silent && break
+            sleep 1
+          done
+
+      - name: make check
+        run: make check
