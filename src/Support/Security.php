@@ -61,4 +61,56 @@ final class Security
             Response::json(['error' => 'Rate limit exceeded'], 429);
         }
     }
+
+    /**
+     * DB-backed rate limit (survives session resets — used for login
+     * endpoints to defend against credential stuffing).
+     *
+     * Returns the number of attempts that would now be recorded in the
+     * bucket (including this call's increment) when the limit has NOT
+     * been exceeded. When it has, calls Response::json with HTTP 429.
+     */
+    public static function rateLimitDb(\PDO $db, string $bucket, int $limit, int $windowSeconds): int
+    {
+        // Prune anything outside the window for this bucket.
+        $prune = $db->prepare(
+            'DELETE FROM login_attempts WHERE bucket = ? AND attempted_at < (NOW() - INTERVAL ? SECOND)'
+        );
+        $prune->execute([$bucket, $windowSeconds]);
+
+        $count = $db->prepare('SELECT COUNT(*) FROM login_attempts WHERE bucket = ?');
+        $count->execute([$bucket]);
+        $current = (int)$count->fetchColumn();
+
+        if ($current >= $limit) {
+            header('Retry-After: ' . $windowSeconds);
+            Response::json([
+                'error' => 'Too many login attempts; try again later.',
+                'retry_after' => $windowSeconds,
+            ], 429);
+        }
+
+        $db->prepare('INSERT INTO login_attempts (bucket) VALUES (?)')->execute([$bucket]);
+        return $current + 1;
+    }
+
+    /**
+     * Clears the bucket on successful login so a legitimate user who
+     * was nearly throttled doesn't carry their attempt count forward.
+     */
+    public static function rateLimitDbClear(\PDO $db, string $bucket): void
+    {
+        $db->prepare('DELETE FROM login_attempts WHERE bucket = ?')->execute([$bucket]);
+    }
+
+    /**
+     * Constructs a bucket key from the remote IP and (normalized) email
+     * so that one bad actor can't lock out another user from the same
+     * IP and vice versa.
+     */
+    public static function loginBucket(string $email): string
+    {
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        return 'login:' . $ip . ':' . strtolower(trim($email));
+    }
 }

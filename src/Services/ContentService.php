@@ -21,6 +21,29 @@ final class ContentService
         'pdf' => 'application/pdf',
     ];
 
+    /**
+     * Magic-byte-detected MIME values that are acceptable for each
+     * uploaded extension. libmagic returns slightly different strings
+     * across platforms (e.g. .mov can come back as video/quicktime,
+     * video/mp4, or application/octet-stream depending on container
+     * variant), so each extension lists every known-good value.
+     *
+     * @var array<string, list<string>>
+     */
+    private const DETECTED_MIME_WHITELIST = [
+        'jpg'  => ['image/jpeg'],
+        'jpeg' => ['image/jpeg'],
+        'png'  => ['image/png'],
+        'gif'  => ['image/gif'],
+        'webp' => ['image/webp'],
+        'mp4'  => ['video/mp4'],
+        'webm' => ['video/webm', 'video/x-matroska'],
+        'mov'  => ['video/quicktime', 'video/mp4'],
+        'mp3'  => ['audio/mpeg', 'audio/mp3'],
+        'wav'  => ['audio/wav', 'audio/x-wav', 'audio/wave'],
+        'pdf'  => ['application/pdf'],
+    ];
+
     public static function tenantDirectory(string $accountName): string
     {
         $safeName = self::safeAccountName($accountName);
@@ -67,6 +90,9 @@ final class ContentService
         if (!isset(self::MIME_TYPES[$extension])) {
             throw new \InvalidArgumentException('Unsupported file type');
         }
+        // Magic-byte check: reject a file whose actual content doesn't
+        // match its claimed extension (e.g. a renamed .exe → .png).
+        self::verifyMagicBytes((string)$upload['tmp_name'], $extension);
         $safeBase = preg_replace('/[^A-Za-z0-9._-]+/', '-', pathinfo($original, PATHINFO_FILENAME)) ?: 'file';
         $filename = trim($safeBase, '.-') . '-' . date('YmdHis') . '.' . $extension;
         $dir = self::ensureTenantDirectory($accountName);
@@ -103,5 +129,32 @@ final class ContentService
     {
         $safe = preg_replace('/[^A-Za-z0-9_-]+/', '-', strtolower($accountName));
         return trim($safe ?: 'tenant', '-');
+    }
+
+    /**
+     * Detect the actual MIME type of a file from its bytes and confirm
+     * it matches one of the values whitelisted for the claimed
+     * extension. Throws InvalidArgumentException on mismatch.
+     */
+    public static function verifyMagicBytes(string $path, string $extension): void
+    {
+        if (!is_file($path)) {
+            throw new \InvalidArgumentException('Uploaded file is unreadable');
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            // No libmagic — fail closed.
+            throw new \RuntimeException('Server cannot verify uploaded file types');
+        }
+        // finfo objects are freed automatically (PHP 8.5+), so no explicit close.
+        $detected = (string)finfo_file($finfo, $path);
+        $allowed = self::DETECTED_MIME_WHITELIST[$extension] ?? [];
+        if (!in_array($detected, $allowed, true)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Uploaded file content (%s) does not match its .%s extension',
+                $detected ?: 'unknown',
+                $extension,
+            ));
+        }
     }
 }

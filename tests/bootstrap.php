@@ -58,9 +58,13 @@ try {
     return;
 }
 
-// Create test schemas and run migrations against them.
-$rootPdo->exec("CREATE DATABASE IF NOT EXISTS `" . TEST_SUPER_DB . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-$rootPdo->exec("CREATE DATABASE IF NOT EXISTS `" . TEST_TENANT_DB . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+// Drop and recreate test schemas so non-idempotent migrations (e.g. raw
+// CREATE INDEX) re-apply cleanly on every test run. The test schemas are
+// namespaced (nextup_test_*) so this only nukes test data.
+$rootPdo->exec("DROP DATABASE IF EXISTS `" . TEST_SUPER_DB . "`");
+$rootPdo->exec("DROP DATABASE IF EXISTS `" . TEST_TENANT_DB . "`");
+$rootPdo->exec("CREATE DATABASE `" . TEST_SUPER_DB . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+$rootPdo->exec("CREATE DATABASE `" . TEST_TENANT_DB . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 
 applyMigrations($rootPdo, TEST_SUPER_DB, dirname(__DIR__) . '/migrations/super');
 applyMigrations($rootPdo, TEST_TENANT_DB, dirname(__DIR__) . '/migrations/tenant');

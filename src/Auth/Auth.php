@@ -9,6 +9,14 @@ use PDO;
 
 final class Auth
 {
+    /**
+     * Per-request memo so re-checking users.is_active multiple times in
+     * one request still only hits the DB once.
+     *
+     * @var array<int,bool>
+     */
+    private static array $activeMemo = [];
+
     public static function requireTenantRole(string ...$roles): void
     {
         if (self::actingAsSuper()) {
@@ -18,6 +26,50 @@ final class Auth
         if (!is_array($user) || !in_array($user['role'] ?? '', $roles, true)) {
             Response::json(['error' => 'Authentication required'], 401);
         }
+    }
+
+    /**
+     * Verifies that the session's tenant_user is still active in the
+     * database. Call this from request hot paths that need to honor
+     * deactivation immediately (instead of waiting for the session to
+     * expire). Caches the lookup per request so repeated calls are
+     * cheap.
+     */
+    public static function ensureSessionUserActive(PDO $db): void
+    {
+        if (self::actingAsSuper()) {
+            return;
+        }
+        $user = $_SESSION['tenant_user'] ?? null;
+        if (!is_array($user) || !isset($user['id'])) {
+            return;
+        }
+        $userId = (int)$user['id'];
+        if (isset(self::$activeMemo[$userId])) {
+            if (!self::$activeMemo[$userId]) {
+                self::invalidateSession();
+            }
+            return;
+        }
+        $stmt = $db->prepare('SELECT is_active FROM users WHERE id = ? LIMIT 1');
+        $stmt->execute([$userId]);
+        $isActive = (int)($stmt->fetchColumn() ?: 0) === 1;
+        self::$activeMemo[$userId] = $isActive;
+        if (!$isActive) {
+            self::invalidateSession();
+        }
+    }
+
+    private static function invalidateSession(): never
+    {
+        unset($_SESSION['tenant_user']);
+        Response::json(['error' => 'Account has been deactivated'], 401);
+    }
+
+    /** Test seam — drop the per-request memo. */
+    public static function resetActiveMemo(): void
+    {
+        self::$activeMemo = [];
     }
 
     public static function requireSuper(): void

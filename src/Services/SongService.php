@@ -208,9 +208,14 @@ final class SongService
         $params = [];
         $query = trim((string)($filters['query'] ?? ''));
         if ($query !== '') {
-            $where[] = '(title LIKE ? OR artist LIKE ?)';
-            $term = '%' . $query . '%';
-            array_push($params, $term, $term);
+            if (self::shouldUseFulltext($query)) {
+                $where[] = 'MATCH(title, artist) AGAINST (? IN BOOLEAN MODE)';
+                $params[] = self::fulltextExpression($query);
+            } else {
+                $where[] = '(title LIKE ? OR artist LIKE ?)';
+                $term = '%' . $query . '%';
+                array_push($params, $term, $term);
+            }
         }
         if (($filters['artist'] ?? '') !== '') {
             $where[] = 'artist = ?';
@@ -229,6 +234,45 @@ final class SongService
             $params[] = $filters['video_provider'];
         }
         return [implode(' AND ', $where), $params];
+    }
+
+    /**
+     * Decide between FULLTEXT and LIKE for a given query.
+     *
+     * FULLTEXT in MySQL's default InnoDB tokenizer drops tokens shorter
+     * than `innodb_ft_min_token_size` (default 3) and stop-words, so
+     * very short queries (<3 chars) and queries that are entirely
+     * non-word characters fall back to LIKE. This keeps "a", "ed",
+     * "U2", and pure punctuation queries from silently returning zero.
+     */
+    public static function shouldUseFulltext(string $query): bool
+    {
+        $tokens = preg_split('/\s+/', trim($query)) ?: [];
+        foreach ($tokens as $token) {
+            if (preg_match('/[\p{L}\p{N}]{3,}/u', $token) === 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Build a BOOLEAN MODE expression: each ≥3-char token becomes a
+     * required prefix match (+word*). Shorter tokens are dropped (LIKE
+     * fallback already handled them). Strips characters that would
+     * break the MATCH parser.
+     */
+    public static function fulltextExpression(string $query): string
+    {
+        $tokens = preg_split('/\s+/', trim($query)) ?: [];
+        $parts = [];
+        foreach ($tokens as $token) {
+            $clean = preg_replace('/[^\p{L}\p{N}]+/u', '', $token) ?? '';
+            if (strlen($clean) >= 3) {
+                $parts[] = '+' . $clean . '*';
+            }
+        }
+        return implode(' ', $parts);
     }
 
     private static function nullableText(mixed $value, int $max): ?string

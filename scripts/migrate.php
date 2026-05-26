@@ -131,6 +131,18 @@ function ensureLedger(PDO $db): void
     $db->exec(MIGRATIONS_TABLE_DDL);
 }
 
+/** Returns true if the database contains tables other than schema_migrations. */
+function databaseHasUserTables(PDO $db): bool
+{
+    $rows = $db->query(
+        "SELECT table_name FROM information_schema.tables
+         WHERE table_schema = DATABASE()
+           AND table_name <> 'schema_migrations'
+         LIMIT 1"
+    )->fetchAll();
+    return $rows !== [];
+}
+
 /** @return array<string,string> filename => checksum */
 function loadApplied(PDO $db): array
 {
@@ -148,11 +160,17 @@ function runScope(string $scope, bool $dryRun, ?string $tenantDatabase = null): 
     echo "▸ Migrating {$label}" . ($dryRun ? ' [dry-run]' : '') . "\n";
 
     $db = dbForScope($scope, $tenantDatabase);
+
+    // Distinguish a truly-empty database (apply all migrations) from a
+    // legacy-populated one (only schema_migrations is missing — mark as
+    // applied without executing). Check BEFORE creating the ledger so
+    // schema_migrations itself doesn't skew the count.
+    $isLegacyPopulated = databaseHasUserTables($db);
     ensureLedger($db);
     $applied = loadApplied($db);
     $files = listMigrationFiles($scope);
 
-    if ($applied === [] && $files !== []) {
+    if ($applied === [] && $files !== [] && $isLegacyPopulated) {
         bootstrap($db, $files, $dryRun);
         return;
     }

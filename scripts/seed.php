@@ -11,9 +11,19 @@ require dirname(__DIR__) . '/src/autoload.php';
 Env::load(dirname(__DIR__) . '/.env');
 
 $super = Connection::super();
-$tenantMigration = file_get_contents(dirname(__DIR__) . '/migrations/tenant/001_tenant_schema.sql');
-if ($tenantMigration === false) {
-    throw new RuntimeException('Unable to read tenant migration.');
+
+/** Apply every tenant migration in order to a fresh tenant DB. */
+function applyAllTenantMigrations(PDO $db): void
+{
+    $files = glob(dirname(__DIR__) . '/migrations/tenant/*.sql') ?: [];
+    sort($files, SORT_STRING);
+    foreach ($files as $file) {
+        $sql = file_get_contents($file);
+        if ($sql === false) {
+            throw new RuntimeException("Unable to read {$file}");
+        }
+        $db->exec($sql);
+    }
 }
 
 $superPassword = password_hash('password123', PASSWORD_DEFAULT);
@@ -69,7 +79,7 @@ foreach ($tenants as $tenant) {
 
     $super->exec("CREATE DATABASE IF NOT EXISTS `{$tenant['database_name']}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     $db = Connection::tenant($tenant['database_name']);
-    $db->exec($tenantMigration);
+    applyAllTenantMigrations($db);
 
     $adminEmail = "admin@{$tenant['domain']}";
     $adminPassword = password_hash('password123', PASSWORD_DEFAULT);

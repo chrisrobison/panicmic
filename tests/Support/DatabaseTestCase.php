@@ -54,7 +54,7 @@ abstract class DatabaseTestCase extends TestCase
             $this->tenantDb->exec("DELETE FROM `{$table}`");
         }
         // Super tables (leave tenants/tenant_domains alone — we re-seed them).
-        foreach (['shared_songs', 'provisioning_jobs', 'super_admin_users'] as $table) {
+        foreach (['shared_songs', 'provisioning_jobs', 'super_admin_users', 'login_attempts'] as $table) {
             try {
                 $this->superDb->exec("DELETE FROM `{$table}`");
             } catch (\Throwable) {

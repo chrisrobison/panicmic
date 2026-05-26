@@ -71,6 +71,13 @@ try {
         Response::redirect('/admin/login');
     }
 
+    // Re-validate that any signed-in tenant user is still active on every
+    // tenant-scoped request (cached per request). Deactivated accounts
+    // are kicked out immediately instead of waiting for session expiry.
+    if (!empty($_SESSION['tenant_user'])) {
+        Auth::ensureSessionUserActive($db);
+    }
+
     if ($method !== 'GET') {
         Security::requireCsrf();
     }
@@ -167,10 +174,15 @@ function publicTenant(array $tenant): array
 function tenantLogin(PDO $db): never
 {
     $input = Request::input();
-    $user = Auth::attemptTenant($db, trim((string)($input['email'] ?? '')), (string)($input['password'] ?? ''));
+    $email = trim((string)($input['email'] ?? ''));
+    $bucket = Security::loginBucket($email);
+    Security::rateLimitDb(Connection::super(), $bucket, 5, 300);
+
+    $user = Auth::attemptTenant($db, $email, (string)($input['password'] ?? ''));
     if (!$user) {
         Response::json(['error' => 'Invalid credentials'], 401);
     }
+    Security::rateLimitDbClear(Connection::super(), $bucket);
     Response::json(['user' => $user]);
 }
 
@@ -542,12 +554,17 @@ function handleSuper(string $path, string $method): never
     }
     if ($path === '/api/super/login' && $method === 'POST') {
         $input = Request::input();
+        $email = trim((string)($input['email'] ?? ''));
+        $bucket = Security::loginBucket('super:' . $email);
+        Security::rateLimitDb($db, $bucket, 5, 300);
+
         $stmt = $db->prepare('SELECT * FROM super_admin_users WHERE email = ? LIMIT 1');
-        $stmt->execute([trim((string)($input['email'] ?? ''))]);
+        $stmt->execute([$email]);
         $user = $stmt->fetch();
         if (!$user || !password_verify((string)($input['password'] ?? ''), $user['password_hash'])) {
             Response::json(['error' => 'Invalid credentials'], 401);
         }
+        Security::rateLimitDbClear($db, $bucket);
         $_SESSION['super_admin'] = ['id' => (int)$user['id'], 'email' => $user['email'], 'display_name' => $user['display_name']];
         Response::json(['user' => $_SESSION['super_admin']]);
     }

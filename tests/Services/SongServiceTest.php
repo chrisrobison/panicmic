@@ -66,4 +66,43 @@ final class SongServiceTest extends DatabaseTestCase
         self::assertArrayHasKey($a, $found);
         self::assertArrayHasKey($b, $found);
     }
+
+    public function testFulltextRoutingDecision(): void
+    {
+        self::assertTrue(SongService::shouldUseFulltext('whiskey'));
+        self::assertTrue(SongService::shouldUseFulltext('don\'t stop'));
+        // Too-short tokens fall back to LIKE so they don't silently return 0.
+        self::assertFalse(SongService::shouldUseFulltext('u2'));
+        self::assertFalse(SongService::shouldUseFulltext('a'));
+        self::assertFalse(SongService::shouldUseFulltext(''));
+        self::assertFalse(SongService::shouldUseFulltext('---'));
+    }
+
+    public function testFulltextExpressionBuildsPrefixedTokens(): void
+    {
+        self::assertSame('+whiskey*', SongService::fulltextExpression('whiskey'));
+        // Apostrophe is stripped because MATCH AGAINST would otherwise
+        // break the parser; "don't" → "dont" still matches as a prefix.
+        self::assertSame('+dont*', SongService::fulltextExpression("don't"));
+        self::assertSame('+tennessee* +whiskey*', SongService::fulltextExpression('tennessee whiskey'));
+    }
+
+    public function testSearchUsesFulltextPathForLongerQueries(): void
+    {
+        SongService::create($this->tenantDb, ['title' => 'Tennessee Whiskey', 'artist' => 'Chris Stapleton']);
+        SongService::create($this->tenantDb, ['title' => 'Friends in Low Places', 'artist' => 'Garth Brooks']);
+
+        // 'tenn' is >= 3 chars so this hits FULLTEXT with a prefix match.
+        $result = SongService::search($this->tenantDb, ['query' => 'tenn']);
+        self::assertSame(1, $result['total']);
+        self::assertSame('Tennessee Whiskey', $result['songs'][0]['title']);
+    }
+
+    public function testSearchFallsBackToLikeForShortQueries(): void
+    {
+        SongService::create($this->tenantDb, ['title' => 'U2 Greatest Hits', 'artist' => 'U2']);
+        // 'u2' is <3 chars and would be dropped by FULLTEXT — LIKE handles it.
+        $result = SongService::search($this->tenantDb, ['query' => 'u2']);
+        self::assertSame(1, $result['total']);
+    }
 }
