@@ -115,7 +115,11 @@ try {
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => QueueController::updateStatus($db, $tenant, $session, (int)$m[1]),
         (bool)preg_match('#^/api/requests/(\d+)/youtube$#', $path, $m) && $method === 'POST' => QueueController::attachYouTubeVideo($db, $session, (int)$m[1]),
         $path === '/api/queue/reorder' && $method === 'PATCH' => QueueController::reorder($db, $tenant, $session),
+        $path === '/api/display/state' && $method === 'GET' => DisplayController::showState($db, $tenant, $session),
         $path === '/api/display/state' && $method === 'POST' => DisplayController::updateState($db, $tenant, $session),
+        $path === '/api/display/screens' && $method === 'GET' => DisplayController::listScreens($db, $tenant, $session),
+        $path === '/api/display/screens' && $method === 'POST' => DisplayController::saveScreen($db, $tenant, $session),
+        (bool)preg_match('#^/api/display/screens/([a-z0-9_-]+)$#', $path, $m) && $method === 'DELETE' => DisplayController::deleteScreen($db, $tenant, $session, $m[1]),
         $path === '/api/announcements' && $method === 'POST' => DisplayController::announce($db, $tenant, $session),
         $path === '/api/events' && $method === 'GET' => QueueController::sse($db),
 

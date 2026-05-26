@@ -85,5 +85,29 @@ $current = 'settings';
         <span data-status></span>
       </div>
     </form>
+
+    <form class="settings-card" data-display-screens-form>
+      <h2>Multi-monitor displays</h2>
+      <p class="muted">Configure each physical display in the venue. The KJ console will get one "Open" button per screen.</p>
+      <div data-display-screens-list></div>
+      <fieldset>
+        <legend>Add or update a screen</legend>
+        <label>ID <small>(letters, digits, dashes; used in the URL)</small><input name="screen" pattern="[a-zA-Z0-9_-]+" required></label>
+        <label>Label<input name="label" required></label>
+        <label>Layout
+          <select name="layout">
+            <option value="main">Main projector</option>
+            <option value="lyrics">Lyrics TV</option>
+            <option value="lobby">Lobby</option>
+            <option value="stage">Stage monitor</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label>Default volume<input name="default_volume" type="number" min="0" max="100" value="80"></label>
+        <label><input type="checkbox" name="show_qr" checked> Show QR</label>
+        <label><input type="checkbox" name="show_queue" checked> Show queue</label>
+        <button class="primary">Save screen</button>
+      </fieldset>
+    </form>
   </section>
 </section>

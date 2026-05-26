@@ -5,7 +5,10 @@ const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selec
 const appConfig = {
   csrf: document.querySelector('meta[name="csrf-token"]')?.content || '',
   page: document.querySelector('meta[name="app-page"]')?.content || '',
-  basePath: document.querySelector('meta[name="app-base-path"]')?.content || ''
+  basePath: document.querySelector('meta[name="app-base-path"]')?.content || '',
+  tenantSlug: document.querySelector('meta[name="app-tenant-slug"]')?.content || '',
+  sessionId: document.querySelector('meta[name="app-session-id"]')?.content || '',
+  screen: new URLSearchParams(location.search).get('screen') || 'main',
 };
 const basePath = appConfig.basePath.replace(/\/$/, '');
 
@@ -112,6 +115,148 @@ function renderDisplay(queue, display = {}) {
     qr.dataset.done = '1';
     qr.innerHTML = qrSvg(location.origin + url('/'));
   }
+  syncDisplayPlayer(current, display);
+}
+
+/* ---------- Display player (Phase 5.2) ---------- */
+
+const displayPlayer = {
+  ytApiLoaded: false,
+  ytPlayer: null,
+  currentVideoId: null,
+  currentRequestId: null,
+};
+
+function syncDisplayPlayer(current, display = {}) {
+  const playerRoot = $('[data-display-player]');
+  const grid = $('[data-display-grid]');
+  if (!playerRoot || !grid) return;
+
+  const playMode = display.mode === 'now_singing';
+  playerRoot.hidden = !playMode;
+  grid.hidden = playMode;
+
+  if (!playMode) {
+    stopDisplayPlayer();
+    return;
+  }
+
+  const lt = $('[data-display-lower-third]', playerRoot);
+  if (lt) {
+    lt.hidden = !current;
+    if (current) {
+      $('[data-display-lt-singer]', lt).textContent = current.singer_name || '';
+      $('[data-display-lt-song]', lt).textContent = `${current.title || ''}${current.artist ? ' — ' + current.artist : ''}`;
+    }
+  }
+
+  const ytId = display.youtube_video_id || extractYouTubeId(display.youtube_url || current?.youtube_url || '');
+  const videoUrl = display.song_video_url || '';
+
+  if (ytId) {
+    showYouTube(ytId);
+  } else if (videoUrl) {
+    showSelfHostedVideo(videoUrl);
+  } else {
+    showEmptyPlayer(current);
+  }
+}
+
+function stopDisplayPlayer() {
+  if (displayPlayer.ytPlayer && typeof displayPlayer.ytPlayer.stopVideo === 'function') {
+    try { displayPlayer.ytPlayer.stopVideo(); } catch (_) {}
+  }
+  displayPlayer.currentVideoId = null;
+  const yt = $('[data-display-yt]');
+  const v = $('[data-display-video]');
+  const empty = $('[data-display-player-empty]');
+  if (yt) yt.hidden = true;
+  if (v) { v.pause(); v.removeAttribute('src'); v.hidden = true; }
+  if (empty) empty.hidden = true;
+}
+
+function showEmptyPlayer(current) {
+  const empty = $('[data-display-player-empty]');
+  if (!empty) return;
+  $('[data-display-yt]').hidden = true;
+  $('[data-display-video]').hidden = true;
+  empty.hidden = false;
+  $('[data-display-player-title]', empty).textContent = current
+    ? `${current.singer_name || ''} — ${current.title || ''}`
+    : 'Ready';
+}
+
+function showSelfHostedVideo(src) {
+  const v = $('[data-display-video]');
+  const yt = $('[data-display-yt]');
+  const empty = $('[data-display-player-empty]');
+  if (yt) yt.hidden = true;
+  if (empty) empty.hidden = true;
+  if (!v) return;
+  if (v.getAttribute('src') !== src) {
+    v.setAttribute('src', src);
+  }
+  v.hidden = false;
+  v.muted = true;
+  v.play().catch(() => {});
+}
+
+function showYouTube(videoId) {
+  const yt = $('[data-display-yt]');
+  const v = $('[data-display-video]');
+  const empty = $('[data-display-player-empty]');
+  if (v) { v.pause(); v.hidden = true; }
+  if (empty) empty.hidden = true;
+  if (!yt) return;
+  yt.hidden = false;
+  if (displayPlayer.currentVideoId === videoId) return;
+  displayPlayer.currentVideoId = videoId;
+
+  loadYouTubeApi(() => {
+    if (!displayPlayer.ytPlayer) {
+      displayPlayer.ytPlayer = new YT.Player(yt, {
+        height: '100%',
+        width: '100%',
+        videoId,
+        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
+        events: {
+          onReady: e => {
+            e.target.mute();
+            e.target.playVideo();
+            // Defer unmute so Chromium's autoplay policy accepts it
+            // after the videoplay event fires (user has effectively
+            // gestured via the operator's command path).
+            setTimeout(() => { try { e.target.unMute(); } catch (_) {} }, 800);
+          },
+        },
+      });
+    } else {
+      displayPlayer.ytPlayer.loadVideoById(videoId);
+      try { displayPlayer.ytPlayer.unMute(); } catch (_) {}
+    }
+  });
+}
+
+function loadYouTubeApi(callback) {
+  if (window.YT && window.YT.Player) {
+    callback();
+    return;
+  }
+  if (displayPlayer.ytApiLoaded) {
+    setTimeout(() => loadYouTubeApi(callback), 50);
+    return;
+  }
+  displayPlayer.ytApiLoaded = true;
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+  window.onYouTubeIframeAPIReady = callback;
+}
+
+function extractYouTubeId(url) {
+  if (!url) return null;
+  const m = String(url).match(/(?:v=|youtu\.be\/|embed\/)([\w-]{6,})/);
+  return m ? m[1] : null;
 }
 
 function qrSvg(text) {
@@ -691,6 +836,22 @@ function bindEvents() {
       location.reload();
       return;
     }
+    const openDisplay = event.target.closest('[data-open-display]');
+    if (openDisplay) {
+      await openDisplayWindow(openDisplay.dataset.openDisplay);
+      return;
+    }
+    if (event.target.closest('[data-cue-all]')) {
+      await cueAndPlayAll();
+      return;
+    }
+    const deleteScreen = event.target.closest('[data-delete-screen]');
+    if (deleteScreen) {
+      if (!confirm(`Remove display "${deleteScreen.dataset.deleteScreen}"?`)) return;
+      await api(`/api/display/screens/${encodeURIComponent(deleteScreen.dataset.deleteScreen)}`, { method: 'DELETE' });
+      await loadDisplayScreens();
+      return;
+    }
     const youtube = event.target.closest('[data-youtube]');
     if (youtube) {
       await api(`/api/requests/${youtube.dataset.youtube}/youtube`, { method: 'POST', body: JSON.stringify({}) });
@@ -760,6 +921,26 @@ function bindEvents() {
     if (!confirm(`Start a new session "${name}"? The current session will be archived.`)) return;
     await api('/api/admin/sessions/start', { method: 'POST', body: JSON.stringify({ name }) });
     location.reload();
+  });
+
+  // Display screens settings form.
+  $('[data-display-screens-form]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const data = formData(event.target);
+    if (!data.screen) return;
+    await api('/api/display/screens', {
+      method: 'POST',
+      body: JSON.stringify({
+        screen: data.screen,
+        label: data.label,
+        layout: data.layout || 'main',
+        default_volume: parseInt(data.default_volume || '80', 10),
+        show_qr: !!data.show_qr,
+        show_queue: !!data.show_queue,
+      }),
+    });
+    event.target.reset();
+    await loadDisplayScreens();
   });
 
   // Admin song create (admin-songs page)
@@ -993,8 +1174,133 @@ function bindSuperEvents() {
 function startEvents() {
   if (!window.EventSource || location.pathname.startsWith(url('/super'))) return;
   const source = new EventSource(url('/api/events'));
-  ['queue:updated', 'request:created', 'request:status_changed', 'display:state_changed', 'announcement:shown'].forEach(name => {
+  ['queue:updated', 'request:created', 'request:status_changed', 'display:state_changed', 'announcement:shown', 'session:started', 'session:ended'].forEach(name => {
     source.addEventListener(name, () => loadQueue().catch(() => {}));
+  });
+}
+
+/* ---------- BroadcastChannel (operator ↔ local display) ----------
+ * Same-browser-process channel so the KJ console can cue, play, pause,
+ * and skip on its own popped-out display windows without round-tripping
+ * through the server. Cross-device viewers still receive
+ * display:state_changed via SSE and re-fetch /api/display/state. */
+
+const broadcast = {
+  channel: null,
+  name() {
+    return `nextup:display:${appConfig.tenantSlug || 'unknown'}:${appConfig.sessionId || '0'}`;
+  },
+  open() {
+    if (!('BroadcastChannel' in window) || !appConfig.tenantSlug || !appConfig.sessionId) return null;
+    if (!this.channel) {
+      this.channel = new BroadcastChannel(this.name());
+    }
+    return this.channel;
+  },
+  post(payload) {
+    const ch = this.open();
+    if (!ch) return;
+    ch.postMessage(payload);
+  },
+  subscribe(handler) {
+    const ch = this.open();
+    if (!ch) return;
+    ch.onmessage = event => handler(event.data || {});
+  },
+};
+
+function broadcastDisplayCommand({ screen = 'all', action, payload = {} }) {
+  broadcast.post({ screen, action, payload, sentAt: Date.now() });
+}
+
+/* ---------- Display window manager (Phase 5.4) ---------- */
+
+const displayWindows = new Map();
+
+async function loadDisplayScreens() {
+  try {
+    const { screens = [] } = await api('/api/display/screens');
+    renderDisplayWindowsToolbar(screens);
+    renderDisplayScreensSettings(screens);
+  } catch (_) { /* not authorized on this page */ }
+}
+
+function renderDisplayScreensSettings(screens) {
+  const list = $('[data-display-screens-list]');
+  if (!list) return;
+  list.innerHTML = screens.map(s => `
+    <div class="screen-row">
+      <strong>${escapeHtml(s.label)}</strong>
+      <code>?screen=${escapeHtml(s.screen)}</code>
+      <span class="muted">${escapeHtml(s.layout)} · vol ${escapeHtml(String(s.default_volume))}</span>
+      ${s.screen === 'main' ? '' : `<button type="button" data-delete-screen="${escapeHtml(s.screen)}">Remove</button>`}
+    </div>
+  `).join('') || '<p class="muted">No custom screens yet. The default "main" screen is always available.</p>';
+}
+
+function renderDisplayWindowsToolbar(screens) {
+  const container = $('[data-display-windows]');
+  if (!container) return;
+  const buttons = screens.map(s => `
+    <button type="button" data-open-display="${escapeHtml(s.screen)}" title="${escapeHtml(s.label)} (${escapeHtml(s.layout)})">
+      ⧉ ${escapeHtml(s.label)}
+    </button>
+  `).join('');
+  container.innerHTML = `<span class="muted">Displays:</span> ${buttons}
+    <button type="button" data-cue-all class="primary" title="Cue current up-next on all screens">▶ Cue & Play</button>`;
+}
+
+async function openDisplayWindow(screen) {
+  const target = `nextup_${screen}`;
+  const existing = displayWindows.get(screen);
+  if (existing && !existing.closed) {
+    existing.focus();
+    return;
+  }
+  // Try Window Management API (Chromium) to put each popup on its own monitor.
+  let features = 'popup,width=1280,height=720';
+  try {
+    if ('getScreenDetails' in window) {
+      const details = await window.getScreenDetails();
+      // First screen gets internal, subsequent screens get external ones.
+      const monitor = details.screens[displayWindows.size % details.screens.length];
+      if (monitor) {
+        features = `popup,left=${monitor.availLeft},top=${monitor.availTop},width=${monitor.availWidth},height=${monitor.availHeight}`;
+      }
+    }
+  } catch (_) {
+    /* no permission or API missing — fall back to default popup */
+  }
+  const popup = window.open(url(`/display?screen=${encodeURIComponent(screen)}`), target, features);
+  if (popup) displayWindows.set(screen, popup);
+}
+
+async function cueAndPlayAll() {
+  const data = await loadQueue();
+  const next = data.queue.find(item => item.queue_status === 'up_next') || data.queue.find(item => item.queue_status === 'pending');
+  if (!next) {
+    alert('Queue is empty — nothing to cue.');
+    return;
+  }
+  // 1. Server is the source of truth — persist the new state.
+  await api(`/api/requests/${next.request_id}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status: 'now_singing', screen: 'main' }),
+  });
+  // 2. Fan out an instant "cue" command to local display windows on the same browser.
+  broadcastDisplayCommand({ screen: 'all', action: 'cue', payload: { requestId: next.request_id } });
+}
+
+function startDisplayListener() {
+  if (appConfig.page !== 'display') return;
+  broadcast.subscribe(async data => {
+    if (!data || !data.action) return;
+    if (data.screen && data.screen !== 'all' && data.screen !== appConfig.screen) return;
+    // Any inbound command is treated as a cache-invalidation cue: refresh
+    // server-side authoritative state. Server is source of truth.
+    try {
+      await loadQueue();
+    } catch (_) {}
   });
 }
 
@@ -1014,3 +1320,5 @@ if (appConfig.page === 'super-catalog') {
   loadSharedCatalog(true).then(setupSharedObserver);
 }
 startEvents();
+startDisplayListener();
+if (appConfig.page === 'admin-dashboard' || appConfig.page === 'admin-settings') loadDisplayScreens().catch(() => {});

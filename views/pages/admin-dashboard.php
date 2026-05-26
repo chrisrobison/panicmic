@@ -24,6 +24,10 @@ $current = 'dashboard';
       <button data-display-mode="clean_stage">Clean Stage</button>
       <button data-next-singer class="primary">Next singer</button>
     </div>
+    <div class="toolbar display-windows" data-display-windows>
+      <span class="muted">Displays:</span>
+      <!-- populated by JS from /api/display/screens -->
+    </div>
     <div class="toolbar session-controls">
       <span class="muted">Session: <strong><?= e($session['name']) ?></strong> (<?= e($session['status'] ?? 'active') ?>)</span>
       <form data-session-start class="inline">

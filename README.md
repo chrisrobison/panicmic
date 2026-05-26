@@ -244,6 +244,67 @@ artists. Songbook content is not proprietary in this domain, so the
 exposure is acceptable. A future per-tenant `catalog_visibility`
 setting could opt into a token gate; this is not implemented today.
 
+## Multi-monitor displays
+
+Each tenant session can drive one or more independent display windows.
+`display_state` is keyed by `(session_id, screen)`, so the main
+projector, a lyrics TV, and a lobby monitor can each show different
+content at the same time.
+
+Configure screens under **Admin → Settings → Multi-monitor displays**.
+Each row adds a button to the operator dashboard that opens a new
+window at `/display?screen=<id>`.
+
+### Operator → display control
+
+The KJ console talks to its own popped-out display windows via the
+browser's native `BroadcastChannel`, not the network. Channel name is
+`nextup:display:<tenant-slug>:<session-id>`. The server stays the
+source of truth — every command also POSTs to `/api/display/state` —
+so a reloaded display window recovers its state by fetching
+`/api/display/state?screen=…` and re-rendering. Cross-device viewers
+(singer phones, a projector running off a different PC) receive the
+same `display:state_changed` event through SSE and fetch the same
+endpoint. One model, two transports.
+
+`BroadcastChannel` throttles message delivery to backgrounded tabs to
+about 1 msg/sec after ~5 minutes hidden. Keep both windows visible
+during local development and you won't see the throttling. In
+production the operator window stays focused, so it's not an issue.
+
+### Multi-monitor setup recipes
+
+**One PC, multiple HDMI outputs (most common):**
+
+* Open the KJ dashboard in your main browser window.
+* For each physical display, click its "Open" button in the toolbar.
+  Drag the new popup onto the right monitor, then press F11 for
+  fullscreen. The window's URL survives reloads via its `?screen=`
+  param so a dropped popup re-attaches by reopening it.
+* On Chromium-based browsers, the toolbar will offer to place each
+  popup automatically using the
+  [Window Management API](https://developer.mozilla.org/en-US/docs/Web/API/Window_Management_API)
+  after you grant the one-time "Open windows on other displays"
+  permission.
+
+**Same content on multiple TVs (cheapest):**
+
+Run one display window on the KJ PC and split its HDMI output through
+a powered splitter to every TV. Zero browser overhead, perfect frame
+sync, no setup beyond cables.
+
+**Dedicated projector PC:**
+
+Set up a tenant-specific Chrome shortcut:
+
+```
+chrome --kiosk --window-position=0,0 \
+       "https://bluebird.example.com/display?screen=main"
+```
+
+Add it to the projector PC's startup items so the display comes up
+on boot.
+
 ## Curated Song Catalogs
 
 Each tenant has its own isolated song catalog. KJs can manage `Admin -> Songs` and attach:

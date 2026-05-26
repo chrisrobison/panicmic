@@ -94,8 +94,18 @@ final class QueueController
         $input = Request::input();
         QueueService::setStatus($db, (int)$session['id'], $requestId, (string)($input['status'] ?? 'pending'));
         if (($input['status'] ?? '') === 'now_singing') {
-            DisplayService::update($db, (int)$session['id'], ['mode' => 'now_singing', 'now_request_id' => $requestId], $_SESSION['tenant_user']['id'] ?? null);
-            EventBus::publish($db, 'display:state_changed', ['display' => DisplayService::state($db, (int)$session['id'])]);
+            $screen = preg_replace('/[^a-z0-9_-]/i', '', (string)($input['screen'] ?? '')) ?: DisplayService::DEFAULT_SCREEN;
+            DisplayService::update(
+                $db,
+                (int)$session['id'],
+                ['mode' => 'now_singing', 'now_request_id' => $requestId],
+                $_SESSION['tenant_user']['id'] ?? null,
+                $screen,
+            );
+            EventBus::publish($db, 'display:state_changed', [
+                'screen' => $screen,
+                'display' => DisplayService::state($db, (int)$session['id'], $screen),
+            ]);
         }
         EventBus::publish($db, 'request:status_changed', ['requestId' => $requestId, 'status' => $input['status'] ?? null]);
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);

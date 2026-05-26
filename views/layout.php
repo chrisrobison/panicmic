@@ -23,6 +23,8 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <meta name="csrf-token" content="<?= e($csrf) ?>">
   <meta name="app-base-path" content="<?= e($basePath) ?>">
   <meta name="app-page" content="<?= e($page) ?>">
+  <meta name="app-tenant-slug" content="<?= e($tenant['slug'] ?? '') ?>">
+  <meta name="app-session-id" content="<?= e((string)($session['id'] ?? '')) ?>">
   <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
   <style>
     :root {
