@@ -24,6 +24,14 @@ $current = 'dashboard';
       <button data-display-mode="clean_stage">Clean Stage</button>
       <button data-next-singer class="primary">Next singer</button>
     </div>
+    <div class="toolbar session-controls">
+      <span class="muted">Session: <strong><?= e($session['name']) ?></strong> (<?= e($session['status'] ?? 'active') ?>)</span>
+      <form data-session-start class="inline">
+        <input name="name" placeholder="New session name" maxlength="180">
+        <button>Start new</button>
+      </form>
+      <button data-session-end class="danger">End session</button>
+    </div>
     <form class="announcement" data-announcement-form>
       <input name="message" maxlength="500" placeholder="Announcement to display">
       <button>Show on display</button>

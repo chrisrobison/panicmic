@@ -229,6 +229,21 @@ php scripts/migrate.php tenant nextup_bluebird
 php scripts/migrate.php tenant nextup_neon
 ```
 
+## Catalog visibility
+
+`/api/songs` and `/api/catalog` are intentionally public, returning the
+tenant's song catalog blended with the shared catalog for any visitor
+without requiring authentication. Karaoke songbooks are designed to be
+read by anyone walking into the venue — singers need to browse before
+they sign up, and singup_mode='display_name' means no account is
+needed at all. Gating the catalog would break the core request flow on
+phones.
+
+The trade-off is that a competitor can scrape the list of titles and
+artists. Songbook content is not proprietary in this domain, so the
+exposure is acceptable. A future per-tenant `catalog_visibility`
+setting could opt into a token gate; this is not implemented today.
+
 ## Curated Song Catalogs
 
 Each tenant has its own isolated song catalog. KJs can manage `Admin -> Songs` and attach:

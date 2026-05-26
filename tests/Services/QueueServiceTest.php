@@ -68,4 +68,20 @@ final class QueueServiceTest extends DatabaseTestCase
         $queue = QueueService::queue($this->tenantDb, $this->sessionId);
         self::assertSame('now_singing', $queue[0]['queue_status']);
     }
+
+    public function testRepeatedSubmissionsReuseSingerRow(): void
+    {
+        $songA = SongService::create($this->tenantDb, ['title' => 'A', 'artist' => 'X']);
+        $songB = SongService::create($this->tenantDb, ['title' => 'B', 'artist' => 'Y']);
+        QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $songA, 'display_name' => 'Chris'], 'tok-1', false);
+        QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $songB, 'display_name' => 'Chris'], 'tok-2', false);
+
+        $count = (int)$this->tenantDb->query("SELECT COUNT(*) FROM singers WHERE display_name = 'Chris'")->fetchColumn();
+        self::assertSame(1, $count);
+
+        // Both requests should point at the same singer row.
+        $requests = $this->tenantDb->query('SELECT singer_id FROM song_requests')->fetchAll();
+        self::assertCount(2, $requests);
+        self::assertSame($requests[0]['singer_id'], $requests[1]['singer_id']);
+    }
 }

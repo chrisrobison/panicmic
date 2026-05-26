@@ -10,6 +10,7 @@ use NextUp\Http\ContentController;
 use NextUp\Http\DisplayController;
 use NextUp\Http\PageRenderer;
 use NextUp\Http\QueueController;
+use NextUp\Http\SessionController;
 use NextUp\Http\SettingsController;
 use NextUp\Http\SongController;
 use NextUp\Http\SuperController;
@@ -125,6 +126,8 @@ try {
         $path === '/api/admin/end-impersonation' && $method === 'POST' => AuthController::endImpersonation(),
 
         // ----- Tenant admin API
+        $path === '/api/admin/sessions/start' && $method === 'POST' => SessionController::start($db, $tenant, $session),
+        $path === '/api/admin/sessions/end' && $method === 'POST' => SessionController::end($db, $tenant, $session),
         $path === '/api/admin/settings' && $method === 'GET' => SettingsController::index($db),
         $path === '/api/admin/settings' && $method === 'POST' => SettingsController::update($db),
         $path === '/api/admin/branding' && $method === 'GET' => BrandingController::show($tenant),

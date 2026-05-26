@@ -685,6 +685,12 @@ function bindEvents() {
       if (next) await api(`/api/requests/${next.request_id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'now_singing' }) });
       return;
     }
+    if (event.target.closest('[data-session-end]')) {
+      if (!confirm('End the current session? The queue will be archived.')) return;
+      await api('/api/admin/sessions/end', { method: 'POST', body: JSON.stringify({}) });
+      location.reload();
+      return;
+    }
     const youtube = event.target.closest('[data-youtube]');
     if (youtube) {
       await api(`/api/requests/${youtube.dataset.youtube}/youtube`, { method: 'POST', body: JSON.stringify({}) });
@@ -744,6 +750,16 @@ function bindEvents() {
     event.preventDefault();
     await api('/api/announcements', { method: 'POST', body: JSON.stringify(formData(event.target)) });
     event.target.reset();
+  });
+
+  // Start a new session (archives the active one).
+  $('[data-session-start]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const name = formData(event.target).name?.trim() || '';
+    if (!name) return;
+    if (!confirm(`Start a new session "${name}"? The current session will be archived.`)) return;
+    await api('/api/admin/sessions/start', { method: 'POST', body: JSON.stringify({ name }) });
+    location.reload();
   });
 
   // Admin song create (admin-songs page)

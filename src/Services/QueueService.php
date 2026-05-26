@@ -129,8 +129,14 @@ final class QueueService
             }
 
             $name = trim((string)$data['display_name']);
-            $stmt = $db->prepare('INSERT INTO singers (display_name) VALUES (?)');
-            $stmt->execute([$name]);
+            // Upsert the singer: reuse the existing row for the same
+            // display_name and bump last_seen_at. The LAST_INSERT_ID(id)
+            // trick makes lastInsertId() return the existing id when the
+            // duplicate-key branch fires.
+            $db->prepare(
+                'INSERT INTO singers (display_name, last_seen_at) VALUES (?, NOW())
+                 ON DUPLICATE KEY UPDATE last_seen_at = NOW(), id = LAST_INSERT_ID(id)'
+            )->execute([$name]);
             $singerId = (int)$db->lastInsertId();
 
             $stmt = $db->prepare('INSERT INTO song_requests (session_id, singer_id, song_id, shared_song_id, party_type, notes, requester_token) VALUES (?, ?, ?, ?, ?, ?, ?)');
