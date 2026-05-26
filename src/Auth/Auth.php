@@ -11,6 +11,9 @@ final class Auth
 {
     public static function requireTenantRole(string ...$roles): void
     {
+        if (self::actingAsSuper()) {
+            return;
+        }
         $user = $_SESSION['tenant_user'] ?? null;
         if (!is_array($user) || !in_array($user['role'] ?? '', $roles, true)) {
             Response::json(['error' => 'Authentication required'], 401);
@@ -22,6 +25,26 @@ final class Auth
         if (empty($_SESSION['super_admin'])) {
             Response::json(['error' => 'Super-admin authentication required'], 401);
         }
+    }
+
+    public static function actingAsSuper(): bool
+    {
+        return !empty($_SESSION['super_admin']);
+    }
+
+    /** @return array<string,mixed>|null */
+    public static function currentTenantActor(): ?array
+    {
+        if (self::actingAsSuper()) {
+            $admin = $_SESSION['super_admin'];
+            return [
+                'id' => null,
+                'email' => $admin['email'] ?? null,
+                'display_name' => ($admin['display_name'] ?? 'Super Admin') . ' (super)',
+                'role' => 'super_admin',
+            ];
+        }
+        return $_SESSION['tenant_user'] ?? null;
     }
 
     /** @return array<string,mixed>|null */

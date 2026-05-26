@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS shared_songs (
+  id BIGINT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  external_id VARCHAR(120) NULL UNIQUE,
+  title VARCHAR(255) NOT NULL,
+  artist VARCHAR(255) NOT NULL,
+  genre VARCHAR(120) NULL,
+  year SMALLINT NULL,
+  decade SMALLINT NULL,
+  duo BOOLEAN NOT NULL DEFAULT 0,
+  explicit BOOLEAN NOT NULL DEFAULT 0,
+  styles JSON NULL,
+  languages JSON NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FULLTEXT KEY ft_shared_songs (title, artist),
+  UNIQUE KEY uniq_shared_title_artist (title, artist),
+  INDEX idx_shared_artist (artist),
+  INDEX idx_shared_genre (genre),
+  INDEX idx_shared_decade (decade)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

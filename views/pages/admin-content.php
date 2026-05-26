@@ -1,19 +1,25 @@
-<?php use function NextUp\Support\e; ?>
+<?php
+use function NextUp\Support\e;
+use NextUp\Support\Url;
+$current = 'content';
+?>
 <section class="admin-layout">
-  <aside>
-    <a href="<?= e(\NextUp\Support\Url::path('/admin/dashboard')) ?>">Queue</a>
-    <a href="<?= e(\NextUp\Support\Url::path('/admin/songs')) ?>">Songs</a>
-    <a href="<?= e(\NextUp\Support\Url::path('/admin/content')) ?>">Content</a>
-    <a href="<?= e(\NextUp\Support\Url::path('/admin/settings')) ?>">Settings</a>
-  </aside>
+  <?php include __DIR__ . '/_admin-sidebar.php'; ?>
   <section class="operator">
+    <header class="admin-page-header">
+      <div>
+        <h1>Content uploads</h1>
+        <p class="muted">Images, videos, audio, and PDFs are served from <code>/files/...</code> on this tenant's domain only.</p>
+      </div>
+    </header>
     <form class="panel content-upload" data-content-upload enctype="multipart/form-data">
-      <h1>Venue Content</h1>
-      <label>Image, video, audio, or PDF
-        <input name="content_file" type="file" accept="image/*,video/*,audio/*,.pdf" required>
+      <label>Upload a file
+        <input type="file" name="content_file" required accept="image/*,video/*,audio/*,.pdf">
       </label>
-      <button class="primary">Upload</button>
-      <p data-status></p>
+      <div class="song-card-actions">
+        <button class="primary">Upload</button>
+        <span data-status></span>
+      </div>
     </form>
     <div data-content-files class="content-grid"></div>
   </section>

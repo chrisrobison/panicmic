@@ -10,7 +10,8 @@
     <label>Display name<input name="display_name" maxlength="160" required></label>
     <label>Search catalog<input name="song_search" placeholder="Artist or title" autocomplete="off"></label>
     <div class="song-results" data-song-results></div>
-    <input type="hidden" name="song_id" required>
+    <input type="hidden" name="song_id">
+    <input type="hidden" name="shared_song_id">
     <label>Party type
       <select name="party_type"><option>solo</option><option>duet</option><option>group</option></select>
     </label>

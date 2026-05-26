@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use function NextUp\Support\e;
+use NextUp\Auth\Auth;
 use NextUp\Support\Url;
 
 $title = $tenant['venue_name'] . ' - ' . $tenant['night_name'];
@@ -10,6 +11,8 @@ $bodyClass = str_replace('-', ' ', $page);
 $logoUrl = !empty($tenant['logo_url']) ? (str_starts_with($tenant['logo_url'], '/files/') ? Url::path($tenant['logo_url']) : $tenant['logo_url']) : null;
 $profileImageUrl = !empty($tenant['profile_image_url']) ? (str_starts_with($tenant['profile_image_url'], '/files/') ? Url::path($tenant['profile_image_url']) : $tenant['profile_image_url']) : null;
 $backgroundImageUrl = !empty($tenant['background_image_url']) ? (str_starts_with($tenant['background_image_url'], '/files/') ? Url::path($tenant['background_image_url']) : $tenant['background_image_url']) : null;
+$actingAsSuper = Auth::actingAsSuper();
+$isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
 ?>
 <!doctype html>
 <html lang="en">
@@ -32,14 +35,21 @@ $backgroundImageUrl = !empty($tenant['background_image_url']) ? (str_starts_with
     }
   </style>
 </head>
-<body class="<?= e($page) ?>">
+<body class="<?= e($page) ?><?= $actingAsSuper ? ' acting-as-super' : '' ?>">
+  <?php if ($actingAsSuper && $page !== 'super-login'): ?>
+    <div class="super-banner">
+      <span><strong>Super-admin mode.</strong> Acting on <?= e($tenant['venue_name']) ?>.</span>
+      <a href="<?= e(Url::path('/admin/end-impersonation')) ?>">Exit</a>
+    </div>
+  <?php endif; ?>
   <header class="topbar">
     <a class="brand" href="<?= e(Url::path('/')) ?>">
       <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt=""><?php endif; ?>
       <span><strong><?= e($tenant['venue_name']) ?></strong><small><?= e($tenant['night_name']) ?></small></span>
     </a>
     <nav>
-      <a href="<?= e(Url::path('/songs')) ?>">Songs</a>
+      <a href="<?= e(Url::path('/')) ?>">Request</a>
+      <a href="<?= e(Url::path('/songs')) ?>">Catalog</a>
       <a href="<?= e(Url::path('/me')) ?>">My Spot</a>
       <a href="<?= e(Url::path('/admin/dashboard')) ?>">KJ</a>
       <a href="<?= e(Url::path('/display')) ?>">Display</a>

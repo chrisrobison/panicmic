@@ -182,4 +182,89 @@ final class YouTubeService
             $requestId,
         ]);
     }
+
+    public static function parsePlaylistId(string $input): ?string
+    {
+        $input = trim($input);
+        if ($input === '') {
+            return null;
+        }
+        if (preg_match('/[?&]list=([A-Za-z0-9_-]+)/', $input, $m)) {
+            return $m[1];
+        }
+        if (preg_match('/^[A-Za-z0-9_-]{10,}$/', $input)) {
+            return $input;
+        }
+        return null;
+    }
+
+    /** @return \Generator<int,array{video_id:string,video_title:string,channel:string}> */
+    public static function fetchPlaylist(string $playlistId): \Generator
+    {
+        $apiKey = Env::get('YOUTUBE_API_KEY', '');
+        if (!$apiKey) {
+            throw new \RuntimeException('YouTube API key not configured');
+        }
+        $pageToken = '';
+        do {
+            $params = http_build_query(array_filter([
+                'part' => 'snippet,contentDetails',
+                'maxResults' => '50',
+                'playlistId' => $playlistId,
+                'pageToken' => $pageToken !== '' ? $pageToken : null,
+                'key' => $apiKey,
+            ], static fn ($v) => $v !== null));
+            $context = stream_context_create([
+                'http' => [
+                    'timeout' => 8,
+                    'ignore_errors' => true,
+                    'header' => "Accept: application/json\r\n",
+                ],
+            ]);
+            $raw = @file_get_contents('https://www.googleapis.com/youtube/v3/playlistItems?' . $params, false, $context);
+            if (!$raw) {
+                throw new \RuntimeException('Failed to fetch YouTube playlist (network)');
+            }
+            $data = json_decode($raw, true);
+            if (isset($data['error'])) {
+                throw new \RuntimeException('YouTube API error: ' . ($data['error']['message'] ?? 'unknown'));
+            }
+            foreach ($data['items'] ?? [] as $item) {
+                $title = (string)($item['snippet']['title'] ?? '');
+                $videoId = (string)($item['contentDetails']['videoId'] ?? '');
+                if ($videoId === '' || $title === '' || in_array($title, ['Deleted video', 'Private video'], true)) {
+                    continue;
+                }
+                yield [
+                    'video_id' => $videoId,
+                    'video_title' => $title,
+                    'channel' => (string)($item['snippet']['videoOwnerChannelTitle'] ?? $item['snippet']['channelTitle'] ?? ''),
+                ];
+            }
+            $pageToken = (string)($data['nextPageToken'] ?? '');
+        } while ($pageToken !== '');
+    }
+
+    /** @return array{artist:string,title:string} */
+    public static function parseSongTitle(string $videoTitle): array
+    {
+        $clean = preg_replace('/\s*[\(\[][^()\[\]]*?(karaoke|instrumental|cover|lyrics|lyric|hd|4k|official(\s+(audio|video|music\s+video))?|video|backing\s+track|sing[ -]?along)\b[^()\[\]]*?[\)\]]\s*/i', ' ', $videoTitle);
+        $clean = preg_replace('/\bkaraoke\b/i', '', (string)$clean);
+        $clean = trim(preg_replace('/\s+/', ' ', (string)$clean) ?? $videoTitle);
+        if ($clean === '') {
+            $clean = $videoTitle;
+        }
+
+        foreach ([' - ', ' – ', ' — ', ' | ', ' : '] as $sep) {
+            if (str_contains($clean, $sep)) {
+                [$left, $right] = explode($sep, $clean, 2);
+                $left = trim($left);
+                $right = trim($right);
+                if ($left !== '' && $right !== '') {
+                    return ['artist' => $left, 'title' => $right];
+                }
+            }
+        }
+        return ['artist' => '', 'title' => $clean];
+    }
 }
