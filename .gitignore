@@ -7,3 +7,13 @@ dist/
 content/*
 !content/.gitkeep
 !content/.htaccess
+
+# Dev tools (downloaded via `make tools`)
+tools/
+.phpunit.result.cache
+.phpstan-cache/
+
+# Developer-local catalog data (run scripts/import-shared-catalog.php
+# against seeds/songs.csv on your own machine)
+seeds/songs.csv
+seeds/songs.json
