@@ -38,28 +38,29 @@ For subdirectory installs, set `APP_BASE_PATH` in `.env` before opening the app.
 
 The seed creates two local tenants:
 
-- `bluebird.test:8000`
-- `neon.test:8000`
+- `bluebird.panicmic.com:8000`
+- `neon.panicmic.com:8000`
 
-Add these to `/etc/hosts`:
+Add these to `/etc/hosts` so they resolve to your dev box instead of production:
 
 ```text
-127.0.0.1 bluebird.test
-127.0.0.1 neon.test
-127.0.0.1 nextup.test
+127.0.0.1 bluebird.panicmic.com
+127.0.0.1 neon.panicmic.com
+127.0.0.1 admin.panicmic.com
+127.0.0.1 signup.panicmic.com
 ```
 
 Open:
 
-- Public requests: `http://bluebird.test:8000/`
-- KJ dashboard: `http://bluebird.test:8000/admin/dashboard`
-- Projection: `http://bluebird.test:8000/display`
-- Super admin: `http://nextup.test:8000/super/tenants`
+- Public requests: `http://bluebird.panicmic.com:8000/`
+- KJ dashboard: `http://bluebird.panicmic.com:8000/admin/dashboard`
+- Projection: `http://bluebird.panicmic.com:8000/display`
+- Super admin: `http://admin.panicmic.com:8000/super/tenants`
 
 Seeded logins:
 
-- Tenant admin/KJ: `admin@bluebird.test` / `password123`
-- Super admin: `super@nextup.test` / `password123`
+- Tenant admin/KJ: `admin@bluebird.panicmic.com` / `password123`
+- Super admin: `super@panicmic.com` / `password123`
 
 ## Local Multi-Hostname Development
 
@@ -68,13 +69,13 @@ Browsers include the port in the Host header. Tenant lookup normalizes hosts by 
 Use separate local names in `/etc/hosts` to test isolation:
 
 ```text
-127.0.0.1 bluebird.test
-127.0.0.1 neon.test
+127.0.0.1 bluebird.panicmic.com
+127.0.0.1 neon.panicmic.com
 ```
 
-Each hostname resolves to its own tenant record and database schema.
+Each hostname resolves to its own tenant record and database schema. Because `/etc/hosts` overrides DNS, these names point at your dev box locally while still resolving to the production load balancer everywhere else.
 
-Avoid `.local` hostnames for local development on macOS. `.local` is reserved for Bonjour/mDNS and can add about 5 seconds of DNS delay before the browser connects. The seed still registers `.local` aliases for compatibility, but `.test` is the fast local default.
+Avoid `.local` hostnames for local development on macOS. `.local` is reserved for Bonjour/mDNS and can add about 5 seconds of DNS delay before the browser connects. The seed still registers `.local` aliases for compatibility, but the `<slug>.panicmic.com` names are the recommended local default.
 
 ## Database Layout
 
@@ -195,13 +196,22 @@ TENANT_DB_PASSWORD=<same as above>
 TENANT_DB_PREFIX=nextup_
 
 SIGNUP_ROOT_DOMAIN=panicmic.com
+SIGNUP_HOST=signup.panicmic.com
+# Dedicated host for the global admin UI. When set, /super and /api/super
+# are only served from this hostname; tenant hosts return 404 for those
+# paths. Leave blank to keep /super reachable from every allowed host.
+SUPER_HOST=admin.panicmic.com
 
-MAIL_DRIVER=postmark
+MAIL_DRIVER=exim
 MAIL_FROM=hello@panicmic.com
 MAIL_FROM_NAME=Panic Mic
-POSTMARK_TOKEN=<from Postmark>
+MAIL_SENDMAIL_PATH=/usr/sbin/exim
+# Optional: only needed if MAIL_DRIVER=postmark
+# POSTMARK_TOKEN=<from Postmark>
 
-SENTRY_DSN=https://<key>@oXXX.ingest.sentry.io/<project>
+# Errors and structured events are written to storage/logs/errors-YYYY-MM-DD.log
+# (JSON lines, one file per day). Prune old days with:
+#   find storage/logs -name 'errors-*.log' -mtime +30 -delete
 
 YOUTUBE_API_KEY=<youtube data api>
 YOUTUBE_AUTO_ATTACH=true
@@ -306,9 +316,9 @@ LoadModule rewrite_module libexec/apache2/mod_rewrite.so
 
 With that setup, use URLs such as:
 
-- `http://bluebird.test/nextup/public/`
-- `http://bluebird.test/nextup/public/admin/dashboard`
-- `http://bluebird.test/nextup/public/files/example.mp4`
+- `http://bluebird.panicmic.com/nextup/public/`
+- `http://bluebird.panicmic.com/nextup/public/admin/dashboard`
+- `http://bluebird.panicmic.com/nextup/public/files/example.mp4`
 
 ## Tenant Content
 
@@ -318,7 +328,7 @@ KJs can upload images, videos, audio, and PDFs from `Admin -> Content`. Files ar
 /Users/cdr/Projects/nextup/content/<tenant-slug>/
 ```
 
-The public route `/files/<filename>` maps to the current tenant's content folder after hostname tenant resolution, so `bluebird.test/files/logo.png` and `neon.test/files/logo.png` are isolated even if the filename is the same. Uploaded content is ignored by Git; only `content/.gitkeep` is tracked.
+The public route `/files/<filename>` maps to the current tenant's content folder after hostname tenant resolution, so `bluebird.panicmic.com/files/logo.png` and `neon.panicmic.com/files/logo.png` are isolated even if the filename is the same. Uploaded content is ignored by Git; only `content/.gitkeep` is tracked.
 
 ## YouTube Karaoke Matching
 

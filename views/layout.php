@@ -55,6 +55,7 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
       <a href="<?= e(Url::path('/me')) ?>">My Spot</a>
       <a href="<?= e(Url::path('/admin/dashboard')) ?>">KJ</a>
       <a href="<?= e(Url::path('/display')) ?>">Display</a>
+      <a href="<?= e(Url::path($isAdminPage ? '/admin/help' : '/help')) ?>" data-help-modal>Help</a>
     </nav>
     <?php if ($profileImageUrl): ?><img class="profile-pic" src="<?= e($profileImageUrl) ?>" alt=""><?php endif; ?>
   </header>

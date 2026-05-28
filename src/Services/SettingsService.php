@@ -31,7 +31,10 @@ final class SettingsService
 
     public static function set(PDO $db, string $key, mixed $value): void
     {
-        $stmt = $db->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, CAST(? AS JSON)) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
+        // CAST(? AS JSON) is rejected by MariaDB; binding the encoded
+        // string directly works there and in MySQL 8 alike (the column's
+        // implicit JSON_VALID check accepts well-formed JSON text).
+        $stmt = $db->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
         $stmt->execute([$key, json_encode($value, JSON_THROW_ON_ERROR)]);
     }
 

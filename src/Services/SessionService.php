@@ -73,9 +73,12 @@ final class SessionService
         )->execute([$sessionId]);
 
         try {
+            // MariaDB doesn't support CAST(? AS JSON); plain string
+            // binding works against the JSON_VALID-protected JSON column
+            // on both MariaDB and MySQL 8.
             $db->prepare(
                 'INSERT INTO audit_log (user_id, action, entity_type, entity_id, metadata)
-                 VALUES (?, ?, ?, ?, CAST(? AS JSON))'
+                 VALUES (?, ?, ?, ?, ?)'
             )->execute([
                 $actorUserId,
                 'session.ended',

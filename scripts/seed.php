@@ -10,7 +10,10 @@ require dirname(__DIR__) . '/src/autoload.php';
 
 Env::load(dirname(__DIR__) . '/.env');
 
-$super = Connection::super();
+// seed.php does DDL (CREATE DATABASE, CREATE TABLE via migrations) so
+// always use the elevated provisioning credential.
+$superDbName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+$super = Connection::provisioner($superDbName);
 
 /** Apply every tenant migration in order to a fresh tenant DB. */
 function applyAllTenantMigrations(PDO $db): void
@@ -28,7 +31,7 @@ function applyAllTenantMigrations(PDO $db): void
 
 $superPassword = password_hash('password123', PASSWORD_DEFAULT);
 $super->prepare('INSERT IGNORE INTO super_admin_users (email, password_hash, display_name) VALUES (?, ?, ?)')
-    ->execute(['super@nextup.test', $superPassword, 'Super Admin']);
+    ->execute(['super@panicmic.com', $superPassword, 'Super Admin']);
 
 $tenants = [
     [
@@ -36,7 +39,7 @@ $tenants = [
         'venue_name' => 'Bluebird Bar',
         'night_name' => 'Bluebird Karaoke',
         'database_name' => 'nextup_bluebird',
-        'domain' => 'bluebird.test',
+        'domain' => 'bluebird.panicmic.com',
         'aliases' => ['bluebird.local'],
         'primary_color' => '#23d18b',
         'accent_color' => '#ffd166',
@@ -46,7 +49,7 @@ $tenants = [
         'venue_name' => 'Neon Room',
         'night_name' => 'Neon Karaoke Club',
         'database_name' => 'nextup_neon',
-        'domain' => 'neon.test',
+        'domain' => 'neon.panicmic.com',
         'aliases' => ['neon.local'],
         'primary_color' => '#38bdf8',
         'accent_color' => '#f472b6',
@@ -78,7 +81,9 @@ foreach ($tenants as $tenant) {
     }
 
     $super->exec("CREATE DATABASE IF NOT EXISTS `{$tenant['database_name']}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $db = Connection::tenant($tenant['database_name']);
+    // Tenant schema migrations run as the provisioner; the runtime user
+    // (panicmic) lacks CREATE TABLE.
+    $db = Connection::provisioner($tenant['database_name']);
     applyAllTenantMigrations($db);
 
     $adminEmail = "admin@{$tenant['domain']}";
@@ -86,7 +91,9 @@ foreach ($tenants as $tenant) {
     $db->prepare('INSERT IGNORE INTO users (email, password_hash, display_name, role) VALUES (?, ?, ?, ?)')
         ->execute([$adminEmail, $adminPassword, 'KJ Admin', 'tenant_admin']);
     seedSongs($db);
-    $db->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('prevent_duplicate_requests', CAST('true' AS JSON))")->execute();
+    // MariaDB doesn't support CAST(... AS JSON); plain string literals
+    // satisfy the implicit JSON_VALID() check on JSON-typed columns.
+    $db->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('prevent_duplicate_requests', 'true')")->execute();
     ContentService::ensureTenantDirectory($tenant['slug']);
 }
 

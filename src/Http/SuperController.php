@@ -9,6 +9,7 @@ use NextUp\Database\Connection;
 use NextUp\Services\BillingService;
 use NextUp\Services\ContentService;
 use NextUp\Services\SharedCatalogService;
+use NextUp\Support\Env;
 use NextUp\Support\Impersonation;
 use NextUp\Support\Request;
 use NextUp\Support\Response;
@@ -222,13 +223,17 @@ final class SuperController
     private static function provisionTenant(array $tenant): void
     {
         $root = dirname(__DIR__, 2);
-        $super = Connection::super();
         $dbName = (string)$tenant['database_name'];
         if (!preg_match('/^[A-Za-z0-9_]+$/', $dbName)) {
             throw new \RuntimeException('Invalid database name');
         }
-        $super->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-        $tenantDb = Connection::tenant($dbName);
+        // CREATE DATABASE and tenant-schema migrations both require DDL
+        // privileges the runtime app user (panicmic) deliberately lacks.
+        // Run these through the elevated PROVISION_DB credentials.
+        $superDbName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+        $provisioner = Connection::provisioner($superDbName);
+        $provisioner->exec("CREATE DATABASE IF NOT EXISTS `{$dbName}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        $tenantDb = Connection::provisioner($dbName);
         foreach (glob($root . '/migrations/tenant/*.sql') ?: [] as $file) {
             $tenantDb->exec(file_get_contents($file) ?: '');
         }

@@ -56,9 +56,12 @@ final class SharedCatalogService
     /** @param iterable<array<string,mixed>> $rows @return array{imported:int,skipped:int} */
     public static function bulkImport(PDO $superDb, iterable $rows): array
     {
+        // MariaDB rejects CAST(? AS JSON); bind the encoded JSON strings
+        // directly. Works against both MariaDB (LONGTEXT-with-validate)
+        // and MySQL 8 (native JSON).
         $stmt = $superDb->prepare(
             'INSERT INTO shared_songs (external_id, title, artist, genre, year, decade, duo, explicit, styles, languages)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON))
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
                external_id = COALESCE(VALUES(external_id), external_id),
                genre = COALESCE(VALUES(genre), genre),

@@ -14,7 +14,10 @@ final class EventBus
     /** @param array<string,mixed>|list<mixed> $payload */
     public static function publish(PDO $db, string $event, array $payload): int
     {
-        $stmt = $db->prepare('INSERT INTO realtime_events (event_name, payload) VALUES (?, CAST(? AS JSON))');
+        // MariaDB's JSON type is an alias for LONGTEXT with an implicit
+        // JSON_VALID() check; explicit CAST(? AS JSON) is unsupported.
+        // Plain string binding works against MariaDB and MySQL 8 alike.
+        $stmt = $db->prepare('INSERT INTO realtime_events (event_name, payload) VALUES (?, ?)');
         $stmt->execute([$event, json_encode($payload, JSON_THROW_ON_ERROR)]);
         $id = (int)$db->lastInsertId();
 

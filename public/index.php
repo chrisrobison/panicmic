@@ -38,7 +38,23 @@ Security::headers();
 
 $path = Request::path();
 $method = Request::method();
-$tenantContext = TenantContext::resolve();
+
+// The dedicated signup host (e.g. signup.panicmic.com) serves the
+// venue-signup UI without doing tenant resolution. Any path on this host
+// other than the signup flow gets a 404 — tenant-scoped routes never
+// belong here. We have to detect this before TenantContext::resolve()
+// runs because that path would reject the host as unrecognised.
+$signupHost = strtolower((string)Env::get('SIGNUP_HOST', '') ?? '');
+$onSignupHost = $signupHost !== '' && TenantContext::host() === $signupHost;
+
+// The dedicated super-admin host (e.g. admin.panicmic.com) serves only
+// the /super and /api/super routes. Tenant-scoped paths return 404 from
+// this host so it can be exposed publicly without leaking tenant
+// surfaces. Same detection-before-resolve pattern as SIGNUP_HOST.
+$superHost = strtolower((string)Env::get('SUPER_HOST', '') ?? '');
+$onSuperHost = $superHost !== '' && TenantContext::host() === $superHost;
+
+$tenantContext = ($onSignupHost || $onSuperHost) ? null : TenantContext::resolve();
 
 try {
     if ($path === '/health') {
@@ -51,7 +67,49 @@ try {
         http_response_code(404);
         exit;
     }
-    if (str_starts_with($path, '/super') || str_starts_with($path, '/api/super')) {
+
+    if ($onSignupHost) {
+        // On the signup host, "/" and "/signup" both render the landing.
+        // Everything else returns 404 — there is no tenant on this host
+        // and we never want to leak tenant-shaped responses from here.
+        if (($path === '/' || $path === '/signup') && $method === 'GET') {
+            SignupController::page();
+        }
+        if ($path === '/api/signup' && $method === 'POST') {
+            Security::requireCsrf();
+            SignupController::register();
+        }
+        if ($path === '/signup/accept' && $method === 'GET') {
+            SignupController::acceptPage();
+        }
+        if ($path === '/api/signup/accept' && $method === 'POST') {
+            Security::requireCsrf();
+            SignupController::accept();
+        }
+        Response::json(['error' => 'Not found'], 404);
+    }
+
+    if ($onSuperHost) {
+        // On the super-admin host, "/" redirects to the tenant list and
+        // only /super and /api/super dispatch. Everything else 404s so
+        // this host can sit on the public internet without exposing any
+        // tenant surface area.
+        if ($path === '/' && $method === 'GET') {
+            Response::redirect('/super/tenants');
+        }
+        if (str_starts_with($path, '/super') || str_starts_with($path, '/api/super')) {
+            SuperController::dispatch($path, $method);
+        }
+        Response::json(['error' => 'Not found'], 404);
+    }
+
+    // Legacy behavior: when SUPER_HOST is unset, /super is served from
+    // any allowed host. When SUPER_HOST is set, /super is only served
+    // from that host (handled in the $onSuperHost branch above) so
+    // tenant hosts return a clean 404 for these paths.
+    if ($superHost === ''
+        && (str_starts_with($path, '/super') || str_starts_with($path, '/api/super'))
+    ) {
         SuperController::dispatch($path, $method);
     }
 
@@ -129,11 +187,14 @@ try {
         $path === '/' && $method === 'GET' => PageRenderer::render('public', $tenant, $session),
         $path === '/songs' && $method === 'GET' => PageRenderer::render('songs', $tenant, $session),
         $path === '/me' && $method === 'GET' => PageRenderer::render('me', $tenant, $session),
+        $path === '/help' && $method === 'GET' => PageRenderer::render('help', $tenant, $session),
         $path === '/admin/login' && $method === 'GET' => PageRenderer::render('admin-login', $tenant, $session),
         in_array($path, ['/admin/dashboard', '/admin/queue', '/admin/singers', '/display/control'], true) && $method === 'GET' => PageRenderer::render('admin-dashboard', $tenant, $session),
         $path === '/admin/songs' && $method === 'GET' => PageRenderer::render('admin-songs', $tenant, $session),
         $path === '/admin/content' && $method === 'GET' => PageRenderer::render('admin-content', $tenant, $session),
         $path === '/admin/settings' && $method === 'GET' => PageRenderer::render('admin-settings', $tenant, $session),
+        $path === '/admin/promote' && $method === 'GET' => PageRenderer::render('admin-promote', $tenant, $session),
+        $path === '/admin/help' && $method === 'GET' => PageRenderer::render('admin-help', $tenant, $session),
         in_array($path, ['/display', '/display/fullscreen'], true) && $method === 'GET' => PageRenderer::render('display', $tenant, $session),
 
         // ----- Public API
@@ -160,7 +221,7 @@ try {
         $path === '/api/display/screens' && $method === 'POST' => DisplayController::saveScreen($db, $tenant, $session),
         (bool)preg_match('#^/api/display/screens/([a-z0-9_-]+)$#', $path, $m) && $method === 'DELETE' => DisplayController::deleteScreen($db, $tenant, $session, $m[1]),
         $path === '/api/announcements' && $method === 'POST' => DisplayController::announce($db, $tenant, $session),
-        $path === '/api/events' && $method === 'GET' => QueueController::sse($db),
+        $path === '/api/events' && $method === 'GET' => QueueController::events($db),
 
         // ----- Auth + impersonation
         $path === '/api/admin/login' && $method === 'POST' => AuthController::tenantLogin($db),

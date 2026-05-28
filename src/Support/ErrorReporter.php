@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace NextUp\Support;
 
 /**
- * Minimal observability layer. Forwards uncaught errors and explicit
- * report() calls to Sentry via their HTTP API when SENTRY_DSN is set;
- * otherwise logs structured JSON to storage/errors.log.
+ * Local-only observability layer.
  *
- * No SDK dependency — we POST a Sentry envelope directly so the SaaS
- * stays free of composer packages.
+ * Uncaught exceptions and explicit report() calls are written as
+ * structured JSON lines to storage/logs/errors-YYYY-MM-DD.log. One file
+ * per day keeps individual files browsable without external tooling,
+ * and an admin can prune old days with `find storage/logs -mtime +N
+ * -delete` (or a cron).
+ *
+ * No third-party services, no SDK dependency — just the local disk.
  */
 final class ErrorReporter
 {
@@ -39,13 +42,27 @@ final class ErrorReporter
 
     public static function report(\Throwable $error, ?string $note = null): void
     {
-        $payload = self::serialize($error, $note);
-        $dsn = (string)(Env::get('SENTRY_DSN', '') ?? '');
-        if ($dsn === '') {
-            self::writeLocal($payload);
-            return;
-        }
-        self::shipToSentry($dsn, $payload);
+        self::writeLocal(self::serialize($error, $note));
+    }
+
+    /**
+     * Free-form structured log entry. Useful for non-exception events
+     * (auth failures, billing webhooks, etc.) that you still want a
+     * record of.
+     *
+     * @param array<string,mixed> $context
+     */
+    public static function log(string $event, array $context = []): void
+    {
+        self::writeLocal([
+            'timestamp' => date(DATE_ATOM),
+            'env' => (string)(Env::get('APP_ENV', 'production') ?? 'production'),
+            'event' => $event,
+            'host' => $_SERVER['HTTP_HOST'] ?? null,
+            'uri' => $_SERVER['REQUEST_URI'] ?? null,
+            'method' => $_SERVER['REQUEST_METHOD'] ?? null,
+            'context' => $context,
+        ]);
     }
 
     /** @return array<string,mixed> */
@@ -69,65 +86,15 @@ final class ErrorReporter
     /** @param array<string,mixed> $payload */
     private static function writeLocal(array $payload): void
     {
-        $dir = dirname(__DIR__, 2) . '/storage';
+        $dir = dirname(__DIR__, 2) . '/storage/logs';
         if (!is_dir($dir)) {
             @mkdir($dir, 0775, true);
         }
+        $file = $dir . '/errors-' . date('Y-m-d') . '.log';
         @file_put_contents(
-            $dir . '/errors.log',
+            $file,
             json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . "\n",
             FILE_APPEND | LOCK_EX,
         );
-    }
-
-    /**
-     * @param array<string,mixed> $payload
-     */
-    private static function shipToSentry(string $dsn, array $payload): void
-    {
-        // Parse DSN: https://<key>@<host>/<project>
-        if (!preg_match('#^(https?)://([^:@]+)(?::[^@]+)?@([^/]+)/(\d+)$#', $dsn, $m)) {
-            self::writeLocal($payload + ['_sentry_error' => 'malformed DSN']);
-            return;
-        }
-        [, $scheme, $key, $host, $project] = $m;
-        $endpoint = "{$scheme}://{$host}/api/{$project}/store/";
-
-        $body = json_encode([
-            'event_id' => bin2hex(random_bytes(16)),
-            'timestamp' => $payload['timestamp'],
-            'platform' => 'php',
-            'environment' => $payload['env'],
-            'message' => $payload['message'],
-            'logentry' => ['formatted' => $payload['message']],
-            'exception' => [
-                'values' => [[
-                    'type' => $payload['type'],
-                    'value' => $payload['message'],
-                    'stacktrace' => ['frames' => array_map(static fn ($f) => ['filename' => $f], $payload['trace'])],
-                ]],
-            ],
-            'request' => [
-                'url' => $payload['uri'],
-                'method' => $payload['method'],
-            ],
-            'tags' => ['host' => $payload['host']],
-        ], JSON_THROW_ON_ERROR);
-
-        $auth = sprintf(
-            'Sentry sentry_version=7, sentry_client=nextup-bare/1, sentry_key=%s',
-            $key,
-        );
-
-        $context = stream_context_create([
-            'http' => [
-                'method' => 'POST',
-                'header' => "Content-Type: application/json\r\nX-Sentry-Auth: {$auth}\r\n",
-                'content' => $body,
-                'timeout' => 3,
-                'ignore_errors' => true,
-            ],
-        ]);
-        @file_get_contents($endpoint, false, $context);
     }
 }

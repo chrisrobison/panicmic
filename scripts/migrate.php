@@ -121,9 +121,31 @@ function listMigrationFiles(string $scope): array
 
 function dbForScope(string $scope, ?string $tenantDatabase = null): PDO
 {
-    return $scope === 'super'
-        ? Connection::super()
-        : Connection::tenant($tenantDatabase ?? throw new RuntimeException('tenant database required'));
+    // Migrations execute DDL, so always use the elevated provisioning
+    // credentials (PROVISION_DB_* — falls back to SUPER_DB_* in
+    // Connection::provisioner() if unset).
+    if ($scope === 'super') {
+        $name = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+        ensureDatabaseExists($name);
+        return Connection::provisioner($name);
+    }
+    $database = $tenantDatabase ?? throw new RuntimeException('tenant database required');
+    ensureDatabaseExists($database);
+    return Connection::provisioner($database);
+}
+
+/**
+ * Make sure $database exists before we try to connect to it. The
+ * provisioning user is granted CREATE on the nextup_% pattern, so
+ * idempotently creating the super or a tenant schema is safe.
+ */
+function ensureDatabaseExists(string $database): void
+{
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $database)) {
+        throw new RuntimeException("Invalid database name: {$database}");
+    }
+    $server = Connection::provisionerServer();
+    $server->exec("CREATE DATABASE IF NOT EXISTS `{$database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
 }
 
 function ensureLedger(PDO $db): void
@@ -237,7 +259,10 @@ function applyOne(PDO $db, string $path, bool $dryRun): void
 
 function runAllTenants(bool $dryRun): void
 {
-    $super = Connection::super();
+    // Use provisioner here too — the migrate script should work even
+    // before the runtime app user (panicmic) has been provisioned.
+    $superName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+    $super = Connection::provisioner($superName);
     $tenants = $super->query('SELECT slug, database_name FROM tenants ORDER BY slug')->fetchAll();
     if (!$tenants) {
         echo "No tenants registered in nextup_super.tenants.\n";
@@ -262,7 +287,8 @@ function statusReport(?string $arg, array $cliArgs): void
         return;
     }
     if ($target === 'tenants') {
-        $tenants = Connection::super()->query('SELECT slug, database_name FROM tenants ORDER BY slug')->fetchAll();
+        $superName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+        $tenants = Connection::provisioner($superName)->query('SELECT slug, database_name FROM tenants ORDER BY slug')->fetchAll();
         foreach ($tenants as $t) {
             printStatusForScope('tenant', (string)$t['database_name']);
         }

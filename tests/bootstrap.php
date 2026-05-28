@@ -41,15 +41,22 @@ const TEST_TENANT_SLUG   = 'testbar';
 const TEST_TENANT_DOMAIN = 'test.local';
 
 try {
+    // Tests do DROP DATABASE / CREATE DATABASE for the test schemas,
+    // which needs DDL privileges. Use PROVISION_DB_* when set, otherwise
+    // fall back to SUPER_DB_* (the old dev pattern where root was used
+    // for everything). The test schemas (nextup_test_*) match the
+    // nextup_% pattern, so the provisioning user can drop/create them.
+    $dbaUser = (string)(Env::get('PROVISION_DB_USER', '') ?? '');
+    $prefix = $dbaUser !== '' ? 'PROVISION_DB' : 'SUPER_DB';
     $rootDsn = sprintf(
         'mysql:host=%s;port=%s;charset=utf8mb4',
-        Env::get('SUPER_DB_HOST', '127.0.0.1'),
-        Env::get('SUPER_DB_PORT', '3306'),
+        Env::get("{$prefix}_HOST", '127.0.0.1'),
+        Env::get("{$prefix}_PORT", '3306'),
     );
     $rootPdo = new PDO(
         $rootDsn,
-        Env::get('SUPER_DB_USER', 'root') ?? 'root',
-        Env::get('SUPER_DB_PASSWORD', '') ?? '',
+        Env::get("{$prefix}_USER", 'root') ?? 'root',
+        Env::get("{$prefix}_PASSWORD", '') ?? '',
         [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
     );
 } catch (Throwable $e) {

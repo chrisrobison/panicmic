@@ -1,9 +1,11 @@
 <?php
+use NextUp\Support\QrCode;
 use NextUp\Support\Url;
 use function NextUp\Support\e;
 
 $requestUrl = $tenant['public_request_url'] ?: ('http://' . ($_SERVER['HTTP_HOST'] ?? '') . Url::path('/'));
 $screenId = preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) ?: 'main';
+$requestQr = QrCode::svg($requestUrl, 320);
 ?>
 <section class="display-shell" data-screen="<?= e($screenId) ?>">
   <div class="display-brand">
@@ -40,7 +42,7 @@ $screenId = preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) 
     </div>
     <div class="qr">
       <h2>Request Songs</h2>
-      <div data-qr></div>
+      <div data-qr><?= $requestQr ?></div>
       <p><?= e($requestUrl) ?></p>
     </div>
   </div>

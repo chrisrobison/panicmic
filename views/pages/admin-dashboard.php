@@ -1,7 +1,12 @@
 <?php
 use function NextUp\Support\e;
+use NextUp\Support\QrCode;
 use NextUp\Support\Url;
 $current = 'dashboard';
+$host = $_SERVER['HTTP_HOST'] ?? '';
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
+$singerUrl = $tenant['public_request_url'] ?: ($scheme . '://' . $host . Url::path('/'));
+$dashboardQr = QrCode::svg($singerUrl, 120);
 ?>
 <section class="admin-layout">
   <?php include __DIR__ . '/_admin-sidebar.php'; ?>
@@ -40,6 +45,17 @@ $current = 'dashboard';
       <input name="message" maxlength="500" placeholder="Announcement to display">
       <button>Show on display</button>
     </form>
+    <aside class="qr-widget">
+      <div class="qr-image"><?= $dashboardQr ?></div>
+      <div>
+        <h3>Singer URL</h3>
+        <p class="qr-url"><?= e($singerUrl) ?></p>
+        <div class="qr-actions">
+          <a class="button-like" href="<?= e(Url::path('/admin/promote')) ?>">Print poster</a>
+          <a class="button-like" href="<?= e($singerUrl) ?>" target="_blank" rel="noreferrer">Open</a>
+        </div>
+      </div>
+    </aside>
     <div data-admin-queue class="queue-board"></div>
   </section>
 </section>

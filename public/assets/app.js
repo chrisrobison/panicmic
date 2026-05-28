@@ -110,11 +110,8 @@ function renderDisplay(queue, display = {}) {
     announcement.hidden = display.mode !== 'announcement' || !display.announcement;
     announcement.textContent = display.announcement || '';
   }
-  const qr = $('[data-qr]');
-  if (qr && !qr.dataset.done) {
-    qr.dataset.done = '1';
-    qr.innerHTML = qrSvg(location.origin + url('/'));
-  }
+  // QR is rendered server-side via NextUp\Support\QrCode (real, scannable).
+  // We used to overwrite it with a JS placeholder; don't.
   syncDisplayPlayer(current, display);
 }
 
@@ -270,10 +267,6 @@ function resolveVideoUrl(raw) {
   if (/^(?:https?:)?\/\//i.test(raw)) return raw;
   if (raw.startsWith('/')) return url(raw);
   return raw;
-}
-
-function qrSvg(text) {
-  return `<svg viewBox="0 0 120 120" role="img" aria-label="Request QR placeholder"><rect width="120" height="120" fill="#fff"/><path fill="#111" d="M8 8h32v32H8zM80 8h32v32H80zM8 80h32v32H8zM50 50h10v10H50zM70 50h10v10H70zM50 70h30v10H50zM90 60h10v40H90zM58 88h20v12H58z"/></svg><small>${escapeHtml(text)}</small>`;
 }
 
 /* ---------- Catalog (public + admin) ---------- */
@@ -1221,21 +1214,42 @@ function bindSuperEvents() {
   });
 }
 
-/* ---------- Realtime ---------- */
+/* ---------- Realtime (short poll) ----------
+ * The server-side event log (realtime_events) is consulted via a tiny
+ * /api/events?last_id= poll on a jittered ~4s cadence. The poll itself
+ * returns in milliseconds; the expensive full-queue refetch only fires
+ * when there's actually a new event. This replaces SSE so a PHP-FPM
+ * worker is never held open per connected client. */
+
+let lastEventId = 0;
 
 function startEvents() {
-  if (!window.EventSource || location.pathname.startsWith(url('/super'))) return;
-  const source = new EventSource(url('/api/events'));
-  ['queue:updated', 'request:created', 'request:status_changed', 'display:state_changed', 'announcement:shown', 'session:started', 'session:ended'].forEach(name => {
-    source.addEventListener(name, () => loadQueue().catch(() => {}));
-  });
+  if (location.pathname.startsWith(url('/super'))) return;
+  const baseDelay = 4000;
+  const jitter = () => baseDelay + Math.random() * 1500;
+  let failures = 0;
+  const tick = async () => {
+    try {
+      const data = await api(`/api/events?last_id=${lastEventId}`);
+      failures = 0;
+      const events = Array.isArray(data.events) ? data.events : [];
+      const nextId = Number(data.last_id) || 0;
+      if (nextId > lastEventId) lastEventId = nextId;
+      if (events.length) loadQueue().catch(() => {});
+    } catch (_err) {
+      failures++;
+    }
+    const delay = failures > 2 ? jitter() * 2 : jitter();
+    setTimeout(tick, delay);
+  };
+  setTimeout(tick, jitter());
 }
 
 /* ---------- BroadcastChannel (operator ↔ local display) ----------
  * Same-browser-process channel so the KJ console can cue, play, pause,
  * and skip on its own popped-out display windows without round-tripping
- * through the server. Cross-device viewers still receive
- * display:state_changed via SSE and re-fetch /api/display/state. */
+ * through the server. Cross-device viewers re-fetch /api/display/state
+ * when display:state_changed surfaces via the /api/events poll. */
 
 const broadcast = {
   channel: null,
@@ -1356,9 +1370,155 @@ function startDisplayListener() {
   });
 }
 
+/* ---------- Help modal ---------- */
+/* Help links carry data-help-modal. A normal click opens the help page inside
+ * a modal overlay (no full navigation). Alt-click, Shift-click, Ctrl/Cmd-click,
+ * middle-click, or a long-touch (>500ms) all bypass the modal and let the
+ * browser navigate or open in a new tab. */
+
+const helpModalState = { overlay: null, cache: new Map(), restoreFocus: null };
+
+function buildHelpModal() {
+  if (helpModalState.overlay) return helpModalState.overlay;
+  const overlay = document.createElement('div');
+  overlay.className = 'help-modal';
+  overlay.setAttribute('hidden', '');
+  overlay.innerHTML = `
+    <div class="help-modal-backdrop" data-help-close></div>
+    <div class="help-modal-panel" role="dialog" aria-modal="true" aria-labelledby="help-modal-title">
+      <header class="help-modal-header">
+        <h2 id="help-modal-title">Help</h2>
+        <button type="button" class="icon-btn" data-help-close aria-label="Close help">×</button>
+      </header>
+      <div class="help-modal-body" data-help-body>
+        <p class="help-modal-loading">Loading…</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', event => {
+    if (event.target.closest('[data-help-close]')) closeHelpModal();
+  });
+  helpModalState.overlay = overlay;
+  return overlay;
+}
+
+function openHelpModal(href) {
+  const overlay = buildHelpModal();
+  const body = overlay.querySelector('[data-help-body]');
+  const title = overlay.querySelector('#help-modal-title');
+  helpModalState.restoreFocus = document.activeElement;
+  body.innerHTML = '<p class="help-modal-loading">Loading…</p>';
+  overlay.removeAttribute('hidden');
+  // Force a paint before adding .open so the transition runs.
+  requestAnimationFrame(() => overlay.classList.add('open'));
+  document.body.classList.add('help-modal-open');
+
+  fetch(href, { headers: { 'Accept': 'text/html' }, credentials: 'same-origin' })
+    .then(response => {
+      if (!response.ok) throw new Error('Help failed to load (' + response.status + ')');
+      return response.text();
+    })
+    .then(html => {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const fetchedTitle = doc.querySelector('main .admin-page-header h1, main .help-page h1, main h1');
+      if (fetchedTitle) title.textContent = fetchedTitle.textContent.trim();
+      // Prefer the inner content (help-page section), falling back to <main>.
+      const content = doc.querySelector('main .help-page')
+        || doc.querySelector('main .workspace')
+        || doc.querySelector('main .operator')
+        || doc.querySelector('main');
+      if (!content) {
+        body.innerHTML = '<p class="muted">Couldn’t load the help content. Try the direct link instead.</p>';
+        return;
+      }
+      // Strip the duplicate <h1> header — the modal already shows it.
+      const header = content.querySelector('.admin-page-header');
+      if (header) header.remove();
+      body.innerHTML = '';
+      body.appendChild(content);
+      // Rewrite any in-body links so they don't try to re-enter the modal
+      // (we already navigated to the help page; the singer/KJ uses these to
+      // jump elsewhere in the app — should close the modal and navigate).
+      body.querySelectorAll('a[href]').forEach(a => {
+        a.addEventListener('click', closeHelpModal);
+      });
+      // Focus the close button for accessibility.
+      const closeBtn = overlay.querySelector('[data-help-close]');
+      if (closeBtn) closeBtn.focus();
+    })
+    .catch(error => {
+      body.innerHTML = '<p class="muted">' + escapeHtml(error.message || 'Couldn’t load help.') + '</p>';
+    });
+}
+
+function closeHelpModal() {
+  const overlay = helpModalState.overlay;
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  document.body.classList.remove('help-modal-open');
+  // Wait for the fade-out before hiding so the transition runs.
+  setTimeout(() => {
+    if (!overlay.classList.contains('open')) overlay.setAttribute('hidden', '');
+  }, 220);
+  if (helpModalState.restoreFocus && typeof helpModalState.restoreFocus.focus === 'function') {
+    helpModalState.restoreFocus.focus();
+  }
+  helpModalState.restoreFocus = null;
+}
+
+function bindHelpModalEvents() {
+  // Long-touch tracking: a touchstart that lasts >500ms before touchend
+  // counts as a long-press and lets the click pass through.
+  const longPressMs = 500;
+  const touchState = new WeakMap();
+
+  document.addEventListener('touchstart', event => {
+    const link = event.target.closest('a[data-help-modal]');
+    if (!link) return;
+    touchState.set(link, { start: Date.now(), longPress: false });
+    const timer = setTimeout(() => {
+      const entry = touchState.get(link);
+      if (entry) entry.longPress = true;
+    }, longPressMs);
+    touchState.set(link, { ...(touchState.get(link) || {}), timer });
+  }, { passive: true });
+
+  document.addEventListener('touchend', event => {
+    const link = event.target.closest('a[data-help-modal]');
+    if (!link) return;
+    const entry = touchState.get(link);
+    if (entry && entry.timer) clearTimeout(entry.timer);
+  }, { passive: true });
+
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[data-help-modal]');
+    if (!link) return;
+    // Modifier keys → let the browser open in a new tab / new window / etc.
+    if (event.altKey || event.shiftKey || event.ctrlKey || event.metaKey) return;
+    // Long-touch → behave as full-page navigation.
+    const entry = touchState.get(link);
+    if (entry && entry.longPress) {
+      touchState.delete(link);
+      return;
+    }
+    // Middle-click or other non-primary buttons → let browser handle.
+    if (event.button !== undefined && event.button !== 0) return;
+    event.preventDefault();
+    openHelpModal(link.getAttribute('href'));
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && helpModalState.overlay && helpModalState.overlay.classList.contains('open')) {
+      closeHelpModal();
+    }
+  });
+}
+
 /* ---------- Init ---------- */
 
 bindEvents();
+bindHelpModalEvents();
 bindSuperEvents();
 loadQueue().catch(() => {});
 loadTenants();

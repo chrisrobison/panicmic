@@ -22,14 +22,14 @@ final class TenantContextTest extends TestCase
 
     public function testStripsPortFromHost(): void
     {
-        $_SERVER['HTTP_HOST'] = 'bluebird.test:8000';
-        self::assertSame('bluebird.test', TenantContext::host());
+        $_SERVER['HTTP_HOST'] = 'bluebird.panicmic.com:8000';
+        self::assertSame('bluebird.panicmic.com', TenantContext::host());
     }
 
     public function testLowercasesAndTrims(): void
     {
-        $_SERVER['HTTP_HOST'] = '  Bluebird.TEST  ';
-        self::assertSame('bluebird.test', TenantContext::host());
+        $_SERVER['HTTP_HOST'] = '  Bluebird.PanicMic.COM  ';
+        self::assertSame('bluebird.panicmic.com', TenantContext::host());
     }
 
     public function testHandlesIPv6BracketedHost(): void
@@ -40,9 +40,9 @@ final class TenantContextTest extends TestCase
 
     public function testIgnoresForwardedHeaderWhenTrustProxyOff(): void
     {
-        $_SERVER['HTTP_HOST'] = 'direct.test';
-        $_SERVER['HTTP_X_FORWARDED_HOST'] = 'evil.test';
-        self::assertSame('direct.test', TenantContext::host());
+        $_SERVER['HTTP_HOST'] = 'direct.panicmic.com';
+        $_SERVER['HTTP_X_FORWARDED_HOST'] = 'evil.panicmic.com';
+        self::assertSame('direct.panicmic.com', TenantContext::host());
     }
 
     public function testTrustsForwardedHeaderWhenTrustProxyOn(): void
@@ -50,15 +50,15 @@ final class TenantContextTest extends TestCase
         $_ENV['TRUST_PROXY'] = 'true';
         putenv('TRUST_PROXY=true');
         $_SERVER['HTTP_HOST'] = 'proxy-internal';
-        $_SERVER['HTTP_X_FORWARDED_HOST'] = 'public.test';
-        self::assertSame('public.test', TenantContext::host());
+        $_SERVER['HTTP_X_FORWARDED_HOST'] = 'public.panicmic.com';
+        self::assertSame('public.panicmic.com', TenantContext::host());
     }
 
     public function testHandlesCommaSeparatedForwardedList(): void
     {
         $_ENV['TRUST_PROXY'] = 'true';
         putenv('TRUST_PROXY=true');
-        $_SERVER['HTTP_X_FORWARDED_HOST'] = 'first.test, hop2.example.com';
-        self::assertSame('first.test', TenantContext::host());
+        $_SERVER['HTTP_X_FORWARDED_HOST'] = 'first.panicmic.com, hop2.example.com';
+        self::assertSame('first.panicmic.com', TenantContext::host());
     }
 }

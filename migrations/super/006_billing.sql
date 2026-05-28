@@ -14,10 +14,13 @@ CREATE TABLE IF NOT EXISTS plans (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- MariaDB's JSON type is an alias for LONGTEXT with an implicit
+-- JSON_VALID() check; explicit CAST(... AS JSON) is unsupported there.
+-- A plain string literal works against both MariaDB and MySQL 8.
 INSERT IGNORE INTO plans (code, name, monthly_cents, features) VALUES
-  ('trial',  'Free trial',  0,    CAST('{"max_singers_per_night": 50}' AS JSON)),
-  ('starter','Starter',     1900, CAST('{"max_singers_per_night": 150}' AS JSON)),
-  ('pro',    'Pro',         4900, CAST('{"max_singers_per_night": 500}' AS JSON));
+  ('trial',  'Free trial',  0,    '{"max_singers_per_night": 50}'),
+  ('starter','Starter',     1900, '{"max_singers_per_night": 150}'),
+  ('pro',    'Pro',         4900, '{"max_singers_per_night": 500}');
 
 ALTER TABLE tenants
   ADD COLUMN plan_code VARCHAR(40) NOT NULL DEFAULT 'trial' AFTER status,

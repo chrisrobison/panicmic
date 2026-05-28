@@ -122,25 +122,18 @@ final class QueueController
         Response::json(['ok' => true]);
     }
 
-    public static function sse(PDO $db): never
+    public static function events(PDO $db): never
     {
-        header('Content-Type: text/event-stream');
-        header('Cache-Control: no-cache');
-        header('X-Accel-Buffering: no');
+        header('Cache-Control: no-store');
         $lastId = (int)($_GET['last_id'] ?? 0);
-        $deadline = time() + 25;
-        while (time() < $deadline) {
-            foreach (EventBus::after($db, $lastId) as $event) {
-                $lastId = (int)$event['id'];
-                echo "id: {$lastId}\n";
-                echo 'event: ' . $event['event_name'] . "\n";
-                echo 'data: ' . json_encode($event['payload'], JSON_THROW_ON_ERROR) . "\n\n";
-                @ob_flush();
-                flush();
+        $events = EventBus::after($db, $lastId);
+        $maxId = $lastId;
+        foreach ($events as $event) {
+            $id = (int)$event['id'];
+            if ($id > $maxId) {
+                $maxId = $id;
             }
-            sleep(1);
         }
-        echo ": heartbeat\n\n";
-        exit;
+        Response::json(['events' => $events, 'last_id' => $maxId]);
     }
 }
