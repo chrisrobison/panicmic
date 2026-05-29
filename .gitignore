@@ -8,8 +8,9 @@ content/*
 !content/.gitkeep
 !content/.htaccess
 
-# Dev tools (downloaded via `make tools`)
-tools/
+# Dev tools (phars downloaded via `make tools`; checksums.sha256 IS tracked)
+tools/*
+!tools/checksums.sha256
 .phpunit.result.cache
 .phpstan-cache/
 
