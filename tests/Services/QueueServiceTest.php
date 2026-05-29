@@ -69,6 +69,32 @@ final class QueueServiceTest extends DatabaseTestCase
         self::assertSame('now_singing', $queue[0]['queue_status']);
     }
 
+    public function testSubmitAcceptsSharedSongOnly(): void
+    {
+        // Seed a row in the super shared_songs catalog and reference it.
+        $this->superDb->exec(
+            "INSERT INTO shared_songs (title, artist, year, duo, explicit, styles, languages)
+             VALUES ('Shared Anthem', 'The Catalog', 2010, 0, 0, '[]', '[]')"
+        );
+        $sharedId = (int)$this->superDb->lastInsertId();
+
+        $reqId = QueueService::submit(
+            $this->tenantDb,
+            $this->sessionId,
+            ['shared_song_id' => $sharedId, 'display_name' => 'Alice'],
+            'tok-shared',
+            false,
+            $this->superDb,
+        );
+        self::assertGreaterThan(0, $reqId);
+
+        $queue = QueueService::queue($this->tenantDb, $this->sessionId, $this->superDb);
+        self::assertCount(1, $queue);
+        self::assertSame('shared', $queue[0]['song_source']);
+        self::assertSame('Shared Anthem', $queue[0]['title']);
+        self::assertSame('The Catalog', $queue[0]['artist']);
+    }
+
     public function testRepeatedSubmissionsReuseSingerRow(): void
     {
         $songA = SongService::create($this->tenantDb, ['title' => 'A', 'artist' => 'X']);

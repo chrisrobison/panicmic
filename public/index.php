@@ -149,7 +149,14 @@ try {
 
     AuthController::consumeImpersonationToken($tenant);
 
-    $session = SessionService::current($db, $tenant['night_name']);
+    // Admin and API hits bootstrap a session if none exists; public
+    // landing pages do a read-only lookup so the "closed for tonight"
+    // banner can render instead of silently auto-starting a new session.
+    $isPublicLanding = $method === 'GET'
+        && ($path === '/' || $path === '/display' || str_starts_with($path, '/request'));
+    $session = $isPublicLanding
+        ? SessionService::latest($db, $tenant['night_name'])
+        : SessionService::current($db, $tenant['night_name']);
     $settings = SettingsService::all($db);
 
     // Admin routes require an active tenant session or super impersonation.
@@ -220,7 +227,14 @@ try {
         in_array($path, ['/api/songs', '/api/catalog'], true) && $method === 'GET' => Response::json(SongService::blendedSearch($db, Connection::super(), $_GET)),
         $path === '/api/queue' && $method === 'GET' => Response::json([
             'queue' => QueueService::queue($db, (int)$session['id'], Connection::super()),
-            'display' => DisplayService::state($db, (int)$session['id']),
+            // Honor ?screen=<id> so display windows opened with a non-main
+            // screen receive their own authoritative state. Defaults to
+            // 'main' for backwards compatibility.
+            'display' => DisplayService::state(
+                $db,
+                (int)$session['id'],
+                preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) ?: 'main'
+            ),
         ]),
         in_array($path, ['/api/requests', '/requests'], true) && $method === 'POST' => QueueController::submit($db, $tenant, $session, $settings),
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => QueueController::updateStatus($db, $tenant, $session, (int)$m[1]),

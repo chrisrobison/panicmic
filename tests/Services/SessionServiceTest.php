@@ -21,12 +21,15 @@ final class SessionServiceTest extends DatabaseTestCase
     public function testStartArchivesPreviousSessions(): void
     {
         $next = SessionService::start($this->tenantDb, 'Tuesday Night');
-        self::assertSame('active', $next['status']);
+        // Phase 4.2 lifecycle: ENUM('draft','live','closed'). A newly
+        // started session is 'live'; previously-active rows transition
+        // to 'closed'.
+        self::assertSame('live', $next['status']);
 
         $prev = $this->tenantDb->query(
             "SELECT status, ends_at FROM karaoke_sessions WHERE id = {$this->sessionId}"
         )->fetch();
-        self::assertSame('archived', $prev['status']);
+        self::assertSame('closed', $prev['status']);
         self::assertNotNull($prev['ends_at']);
 
         $active = SessionService::active($this->tenantDb);
@@ -44,7 +47,8 @@ final class SessionServiceTest extends DatabaseTestCase
         $row = $this->tenantDb->query(
             "SELECT status, ends_at FROM karaoke_sessions WHERE id = {$this->sessionId}"
         )->fetch();
-        self::assertSame('archived', $row['status']);
+        // SessionService::end now transitions to 'closed' (post-007 ENUM).
+        self::assertSame('closed', $row['status']);
         self::assertNotNull($row['ends_at']);
 
         $audit = $this->tenantDb->query("SELECT action, metadata FROM audit_log WHERE action = 'session.ended'")->fetch();

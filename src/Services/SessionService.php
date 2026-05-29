@@ -11,9 +11,13 @@ final class SessionService
     /** @return array<string,mixed>|null */
     public static function active(PDO $db): ?array
     {
+        // The current lifecycle is draft → live → closed. Legacy databases
+        // that haven't yet run migration 007 may still carry the old
+        // ('scheduled','active','paused','archived') vocabulary, so accept
+        // both 'live' and the legacy 'active'/'paused' values here.
         $row = $db->query(
             "SELECT * FROM karaoke_sessions
-             WHERE status IN ('active','paused')
+             WHERE status IN ('live','active','paused')
              ORDER BY starts_at DESC LIMIT 1"
         )->fetch();
         return $row ?: null;
@@ -36,6 +40,39 @@ final class SessionService
     }
 
     /**
+     * Read-only lookup: returns the most-recent session (live or closed)
+     * without creating one. Used by public routes that should surface a
+     * "We're closed for tonight" banner instead of silently spinning up
+     * a fresh session whenever a visitor lands on the page.
+     *
+     * @return array<string,mixed>
+     */
+    public static function latest(PDO $db, string $fallbackName): array
+    {
+        $active = self::active($db);
+        if ($active) {
+            return $active;
+        }
+        $row = $db->query(
+            "SELECT * FROM karaoke_sessions
+             ORDER BY COALESCE(ends_at, starts_at) DESC LIMIT 1"
+        )->fetch();
+        if ($row) {
+            return $row;
+        }
+        // Truly fresh tenant — no sessions ever recorded. Return a synthetic
+        // 'closed' marker so the UI shows the closed banner rather than a
+        // broken page; the first KJ action will create the real row.
+        return [
+            'id' => 0,
+            'name' => $fallbackName,
+            'status' => 'closed',
+            'starts_at' => null,
+            'ends_at' => null,
+        ];
+    }
+
+    /**
      * Start a new session. Any other 'active' or 'paused' sessions are
      * archived first so only one session is live at a time.
      *
@@ -43,9 +80,10 @@ final class SessionService
      */
     public static function start(PDO $db, string $name): array
     {
-        $db->exec("UPDATE karaoke_sessions SET status = 'archived', ends_at = COALESCE(ends_at, NOW()) WHERE status IN ('active', 'paused')");
+        // Close any in-flight sessions before starting a new one.
+        $db->exec("UPDATE karaoke_sessions SET status = 'closed', ends_at = COALESCE(ends_at, NOW()) WHERE status IN ('live','active','paused')");
 
-        $stmt = $db->prepare("INSERT INTO karaoke_sessions (name, starts_at, status) VALUES (?, NOW(), 'active')");
+        $stmt = $db->prepare("INSERT INTO karaoke_sessions (name, starts_at, status) VALUES (?, NOW(), 'live')");
         $stmt->execute([$name]);
         $id = (int)$db->lastInsertId();
 
@@ -53,7 +91,7 @@ final class SessionService
 
         $row = $db->prepare('SELECT * FROM karaoke_sessions WHERE id = ?');
         $row->execute([$id]);
-        return $row->fetch() ?: ['id' => $id, 'name' => $name, 'status' => 'active'];
+        return $row->fetch() ?: ['id' => $id, 'name' => $name, 'status' => 'live'];
     }
 
     /**
@@ -65,7 +103,7 @@ final class SessionService
         $stats = self::statsFor($db, $sessionId);
 
         $db->prepare(
-            "UPDATE karaoke_sessions SET status = 'archived', ends_at = NOW() WHERE id = ?"
+            "UPDATE karaoke_sessions SET status = 'closed', ends_at = NOW() WHERE id = ?"
         )->execute([$sessionId]);
 
         $db->prepare(

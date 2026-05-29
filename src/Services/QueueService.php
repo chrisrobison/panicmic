@@ -17,7 +17,8 @@ final class QueueService
                     sr.youtube_video_id, sr.youtube_title, sr.youtube_channel_title, sr.youtube_url, sr.youtube_matched_at,
                     sr.song_id, sr.shared_song_id,
                     s.id singer_id, s.display_name singer_name,
-                    songs.title local_title, songs.artist local_artist, songs.genre local_genre, songs.decade local_decade
+                    songs.title local_title, songs.artist local_artist, songs.genre local_genre, songs.decade local_decade,
+                    songs.video_url local_video_url, songs.provider_url local_provider_url, songs.video_provider local_video_provider
              FROM queue_items qi
              JOIN song_requests sr ON sr.id = qi.request_id
              JOIN singers s ON s.id = sr.singer_id
@@ -44,8 +45,12 @@ final class QueueService
             $row['artist'] = $row['local_artist'] ?? ($shared['artist'] ?? '');
             $row['genre'] = $row['local_genre'] ?? ($shared['genre'] ?? null);
             $row['decade'] = $row['local_decade'] ?? ($shared['decade'] ?? null);
+            $row['video_url'] = $row['local_video_url'] ?? null;
+            $row['provider_url'] = $row['local_provider_url'] ?? null;
+            $row['video_provider'] = $row['local_video_provider'] ?? null;
             $row['song_source'] = !empty($row['song_id']) ? 'local' : (!empty($row['shared_song_id']) ? 'shared' : null);
-            unset($row['local_title'], $row['local_artist'], $row['local_genre'], $row['local_decade']);
+            unset($row['local_title'], $row['local_artist'], $row['local_genre'], $row['local_decade'],
+                  $row['local_video_url'], $row['local_provider_url'], $row['local_video_provider']);
             return $row;
         }, $rows);
     }
@@ -129,14 +134,17 @@ final class QueueService
             }
 
             $name = trim((string)$data['display_name']);
-            // Upsert the singer: reuse the existing row for the same
-            // display_name and bump last_seen_at. The LAST_INSERT_ID(id)
-            // trick makes lastInsertId() return the existing id when the
-            // duplicate-key branch fires.
+            // Upsert the singer scoped to this session: reuse the row for
+            // (session_id, display_name) and bump last_seen_at. The
+            // LAST_INSERT_ID(id) trick makes lastInsertId() return the
+            // existing id when the duplicate-key branch fires. Different
+            // sessions can hold separate rows for the same display_name —
+            // the same person across different nights should be tracked
+            // per-night for stats and orphan cleanup.
             $db->prepare(
-                'INSERT INTO singers (display_name, last_seen_at) VALUES (?, NOW())
+                'INSERT INTO singers (session_id, display_name, last_seen_at) VALUES (?, ?, NOW())
                  ON DUPLICATE KEY UPDATE last_seen_at = NOW(), id = LAST_INSERT_ID(id)'
-            )->execute([$name]);
+            )->execute([$sessionId, $name]);
             $singerId = (int)$db->lastInsertId();
 
             $stmt = $db->prepare('INSERT INTO song_requests (session_id, singer_id, song_id, shared_song_id, party_type, notes, requester_token) VALUES (?, ?, ?, ?, ?, ?, ?)');
