@@ -248,6 +248,7 @@ try {
         in_array($path, ['/api/requests', '/requests'], true) && $method === 'POST' => QueueController::submit($db, $tenant, $session, $settings),
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => QueueController::updateStatus($db, $tenant, $session, (int)$m[1]),
         (bool)preg_match('#^/api/requests/(\d+)/youtube$#', $path, $m) && $method === 'POST' => QueueController::attachYouTubeVideo($db, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/requests/(\d+)/manual-video$#', $path, $m) && $method === 'POST' => QueueController::attachManualVideo($db, $session, (int)$m[1]),
         $path === '/api/queue/reorder' && $method === 'PATCH' => QueueController::reorder($db, $tenant, $session),
         $path === '/api/display/state' && $method === 'GET' => DisplayController::showState($db, $tenant, $session),
         $path === '/api/display/state' && $method === 'POST' => DisplayController::updateState($db, $tenant, $session),

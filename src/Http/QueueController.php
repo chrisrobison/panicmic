@@ -79,12 +79,39 @@ final class QueueController
         }
         $video = YouTubeService::findKaraokeVideo($song);
         if (!$video) {
-            Response::json(['error' => 'No YouTube karaoke video found or YouTube is not configured'], 404);
+            Response::json(['error' => YouTubeService::lastError() ?? 'No YouTube karaoke video found or YouTube is not configured'], 404);
         }
         YouTubeService::attachToRequest($db, $requestId, $video);
         EventBus::publish($db, 'request:youtube_attached', ['requestId' => $requestId, 'video' => $video]);
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
         Response::json(['video' => $video]);
+    }
+
+    /**
+     * Attach (or clear) a KJ-supplied external video link for non-YouTube
+     * sources. An empty/blank url removes any existing link.
+     *
+     * @param array<string,mixed> $session
+     */
+    public static function attachManualVideo(PDO $db, array $session, int $requestId): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+        $url = trim((string)(Request::json()['url'] ?? ''));
+        if ($url !== '') {
+            if (!preg_match('#^https?://#i', $url) || filter_var($url, FILTER_VALIDATE_URL) === false) {
+                Response::json(['error' => 'Enter a valid http(s) video URL.'], 422);
+            }
+            if (strlen($url) > 512) {
+                Response::json(['error' => 'That URL is too long (512 characters max).'], 422);
+            }
+        }
+        $found = QueueService::setManualVideo($db, (int)$session['id'], $requestId, $url === '' ? null : $url);
+        if (!$found) {
+            Response::json(['error' => 'Request not found'], 404);
+        }
+        EventBus::publish($db, 'request:manual_video', ['requestId' => $requestId, 'url' => $url]);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        Response::json(['manual_video_url' => $url === '' ? null : $url]);
     }
 
     /** @param array<string,mixed> $tenant @param array<string,mixed> $session */

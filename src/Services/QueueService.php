@@ -15,6 +15,7 @@ final class QueueService
             "SELECT qi.id queue_item_id, qi.position, qi.status queue_status,
                     sr.id request_id, sr.party_type, sr.notes, sr.status request_status, sr.created_at,
                     sr.youtube_video_id, sr.youtube_title, sr.youtube_channel_title, sr.youtube_url, sr.youtube_matched_at,
+                    sr.manual_video_url, sr.manual_video_attached_at,
                     sr.song_id, sr.shared_song_id,
                     s.id singer_id, s.display_name singer_name,
                     songs.title local_title, songs.artist local_artist, songs.genre local_genre, songs.decade local_decade,
@@ -179,6 +180,26 @@ final class QueueService
             $db->prepare('UPDATE song_requests SET status = ? WHERE id = ? AND session_id = ?')->execute([$status, $requestId, $sessionId]);
             $db->prepare('UPDATE queue_items SET status = ? WHERE request_id = ? AND session_id = ?')->execute([$status, $requestId, $sessionId]);
         });
+    }
+
+    /**
+     * Set (or clear, when $url is null) a KJ-supplied external video link
+     * on a request. Scoped to the session so a KJ can only touch requests
+     * in their own room. Returns false when the request does not exist.
+     */
+    public static function setManualVideo(PDO $db, int $sessionId, int $requestId, ?string $url): bool
+    {
+        $exists = $db->prepare('SELECT 1 FROM song_requests WHERE id = ? AND session_id = ? LIMIT 1');
+        $exists->execute([$requestId, $sessionId]);
+        if (!$exists->fetchColumn()) {
+            return false;
+        }
+        $db->prepare(
+            'UPDATE song_requests
+             SET manual_video_url = ?, manual_video_attached_at = ' . ($url === null ? 'NULL' : 'NOW()') . '
+             WHERE id = ? AND session_id = ?'
+        )->execute([$url, $requestId, $sessionId]);
+        return true;
     }
 
     /** @param list<int> $requestIds */

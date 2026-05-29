@@ -46,6 +46,9 @@ export function renderPublicQueue(queue) {
 }
 
 function renderQueueItemSource(item) {
+  if (item.manual_video_url) {
+    return `<a class="provider-link" href="${escapeHtml(item.manual_video_url)}" target="_blank" rel="noreferrer">↗ Linked video</a>`;
+  }
   if (item.youtube_url) {
     return `<a class="youtube-link" href="${escapeHtml(item.youtube_url)}" target="_blank" rel="noreferrer">YouTube: ${escapeHtml(item.youtube_title || 'karaoke video')}</a>`;
   }
@@ -74,6 +77,7 @@ export function renderAdminQueue(queue) {
       <div class="queue-actions">
         ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
         <button data-youtube="${item.request_id}">Find video</button>
+        <button data-manual-video="${item.request_id}" data-manual-current="${escapeHtml(item.manual_video_url || '')}">${item.manual_video_url ? 'Edit link' : 'Link video'}</button>
       </div>
     </article>
   `).join('') || '<p class="muted">Queue is empty.</p>';
@@ -143,18 +147,34 @@ function syncDisplayPlayer(current, display = {}) {
     }
   }
 
+  // A KJ-supplied manual link wins when it is something the display can
+  // actually embed (a YouTube URL or a direct video file). Non-embeddable
+  // links stay a console-only convenience and fall through to the song's
+  // own video below.
+  const manualUrl = display.manual_video_url || current?.manual_video_url || '';
+  const manualYtId = extractYouTubeId(manualUrl);
+  const manualFileUrl = isPlayableVideoFile(manualUrl) ? resolveVideoUrl(manualUrl) : '';
+
   const ytId = display.youtube_video_id || extractYouTubeId(display.youtube_url || current?.youtube_url || '');
   // Prefer self-hosted MP4 (durable, no quota) over YouTube when both
   // are available on the song.
   const videoUrl = resolveVideoUrl(display.song_video_url || '');
 
-  if (ytId) {
+  if (manualYtId) {
+    showYouTube(manualYtId);
+  } else if (manualFileUrl) {
+    showSelfHostedVideo(manualFileUrl);
+  } else if (ytId) {
     showYouTube(ytId);
   } else if (videoUrl) {
     showSelfHostedVideo(videoUrl);
   } else {
     showEmptyPlayer(current);
   }
+}
+
+function isPlayableVideoFile(url) {
+  return /\.(mp4|webm|ogg|ogv|mov|m4v|m3u8)(\?|#|$)/i.test(url || '');
 }
 
 function stopDisplayPlayer() {

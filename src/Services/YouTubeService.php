@@ -9,16 +9,27 @@ use PDO;
 
 final class YouTubeService
 {
+    /** Human-readable reason the last findKaraokeVideo() call returned null. */
+    private static ?string $lastError = null;
+
     public static function isEnabled(): bool
     {
         return (Env::get('YOUTUBE_AUTO_ATTACH', 'true') !== 'false') && (Env::get('YOUTUBE_API_KEY', '') !== '');
     }
 
+    /** Reason the most recent findKaraokeVideo() returned null (null if it succeeded). */
+    public static function lastError(): ?string
+    {
+        return self::$lastError;
+    }
+
     /** @param array<string,mixed> $song @return array<string,string>|null */
     public static function findKaraokeVideo(array $song): ?array
     {
+        self::$lastError = null;
         $apiKey = Env::get('YOUTUBE_API_KEY', '');
         if (!$apiKey) {
+            self::$lastError = 'YouTube is not configured (YOUTUBE_API_KEY is empty).';
             return null;
         }
 
@@ -43,14 +54,22 @@ final class YouTubeService
         ]);
         $raw = @file_get_contents('https://www.googleapis.com/youtube/v3/search?' . $params, false, $context);
         if (!$raw) {
+            self::$lastError = 'Could not reach the YouTube API (network error or timeout).';
             return null;
         }
 
         $data = json_decode($raw, true);
+        if (is_array($data) && isset($data['error'])) {
+            $message = (string)($data['error']['message'] ?? 'unknown error');
+            $reason = (string)($data['error']['errors'][0]['reason'] ?? '');
+            self::$lastError = 'YouTube API error: ' . $message . ($reason !== '' ? " ({$reason})" : '');
+            return null;
+        }
         $items = is_array($data) && is_array($data['items'] ?? null) ? $data['items'] : [];
         $item = self::bestKaraokeItem($items, $song, $apiKey);
         $videoId = $item['id']['videoId'] ?? null;
         if (!is_string($videoId) || $videoId === '') {
+            self::$lastError = 'No matching karaoke video was found for "' . $query . '".';
             return null;
         }
 

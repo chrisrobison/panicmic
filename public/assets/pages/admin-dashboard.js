@@ -208,6 +208,19 @@ export function init() {
     if (youtube) {
       await api(`/api/requests/${youtube.dataset.youtube}/youtube`, { method: 'POST', body: JSON.stringify({}) });
       await loadQueue();
+      return;
+    }
+    const manualVideo = event.target.closest('[data-manual-video]');
+    if (manualVideo) {
+      const input = prompt('Paste a video URL to link to this request (leave blank to remove):', manualVideo.dataset.manualCurrent || '');
+      if (input === null) return; // cancelled
+      try {
+        await api(`/api/requests/${manualVideo.dataset.manualVideo}/manual-video`, {
+          method: 'POST',
+          body: JSON.stringify({ url: input.trim() }),
+        });
+        await loadQueue();
+      } catch (error) { alert(error.message); }
     }
   });
 
