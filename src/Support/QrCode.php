@@ -273,7 +273,7 @@ final class QrCode
     {
         for ($i = 0; $i < 8; $i++) {
             // Top-left
-            if ($i < 8 && $m[7][$i] === -1) { $m[7][$i] = 0; $r[7][$i] = true; }
+            if ($m[7][$i] === -1) { $m[7][$i] = 0; $r[7][$i] = true; }
             if ($m[$i][7] === -1) { $m[$i][7] = 0; $r[$i][7] = true; }
             // Top-right
             if ($m[7][$size - 1 - $i] === -1) { $m[7][$size - 1 - $i] = 0; $r[7][$size - 1 - $i] = true; }
