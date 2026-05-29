@@ -111,4 +111,30 @@ final class Auth
         $_SESSION['tenant_user'] = ['id' => (int)$user['id'], 'email' => $user['email'], 'display_name' => $user['display_name'], 'role' => $user['role']];
         return $_SESSION['tenant_user'];
     }
+
+    /**
+     * Fallback for the tenant login form: a super-admin may sign in with
+     * their super credentials on ANY tenant host. On success we set the
+     * same acting-as-super session that impersonation uses, so every
+     * requireTenantRole() check passes for this tenant. Super-admins are
+     * a small, trusted set living in the shared super DB, so this is a
+     * global login rather than a per-tenant user row.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function attemptSuperForTenant(PDO $superDb, string $email, string $password): ?array
+    {
+        $stmt = $superDb->prepare('SELECT * FROM super_admin_users WHERE email = ? LIMIT 1');
+        $stmt->execute([$email]);
+        $admin = $stmt->fetch();
+        if (!$admin || !password_verify($password, $admin['password_hash'] ?? '')) {
+            return null;
+        }
+        $_SESSION['super_admin'] = [
+            'id' => (int)$admin['id'],
+            'email' => $admin['email'],
+            'display_name' => $admin['display_name'],
+        ];
+        return self::currentTenantActor();
+    }
 }

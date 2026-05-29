@@ -21,7 +21,12 @@ final class AuthController
         $bucket = Security::loginBucket($email);
         Security::rateLimitDb(Connection::super(), $bucket, 5, 300);
 
-        $user = Auth::attemptTenant($db, $email, (string)($input['password'] ?? ''));
+        $password = (string)($input['password'] ?? '');
+        // A tenant user signs in against this venue's own users table;
+        // failing that, a super-admin may sign in with their global
+        // super credentials on any KJ instance.
+        $user = Auth::attemptTenant($db, $email, $password)
+            ?? Auth::attemptSuperForTenant(Connection::super(), $email, $password);
         if (!$user) {
             Response::json(['error' => 'Invalid credentials'], 401);
         }

@@ -68,4 +68,29 @@ final class AuthTest extends DatabaseTestCase
         self::assertSame('tenant_admin', $user['role']);
         self::assertArrayHasKey('tenant_user', $_SESSION);
     }
+
+    public function testAttemptSuperForTenantSucceedsWithSuperCredentials(): void
+    {
+        $hash = password_hash('superpw', PASSWORD_DEFAULT);
+        $this->superDb
+            ->prepare('INSERT INTO super_admin_users (email, password_hash, display_name) VALUES (?, ?, ?)')
+            ->execute(['boss@x', $hash, 'Boss']);
+
+        $actor = Auth::attemptSuperForTenant($this->superDb, 'boss@x', 'superpw');
+        self::assertNotNull($actor);
+        self::assertSame('super_admin', $actor['role']);
+        self::assertArrayHasKey('super_admin', $_SESSION);
+        self::assertTrue(Auth::actingAsSuper());
+    }
+
+    public function testAttemptSuperForTenantRejectsWrongPassword(): void
+    {
+        $hash = password_hash('superpw', PASSWORD_DEFAULT);
+        $this->superDb
+            ->prepare('INSERT INTO super_admin_users (email, password_hash, display_name) VALUES (?, ?, ?)')
+            ->execute(['boss2@x', $hash, 'Boss']);
+
+        self::assertNull(Auth::attemptSuperForTenant($this->superDb, 'boss2@x', 'wrong'));
+        self::assertArrayNotHasKey('super_admin', $_SESSION);
+    }
 }
