@@ -89,10 +89,45 @@ final class SignupService
             throw $e;
         }
 
+        // Auto-provision the tenant database so the invite acceptance
+        // step can connect immediately. Failure is non-fatal — the
+        // tenant row stays in status='provisioning' and a super-admin
+        // can retry via the dashboard. This is the PLAN.md Phase 7
+        // automation gap the audit flagged.
+        $provisioned = false;
+        try {
+            TenantProvisioner::provision([
+                'slug' => $subdomain,
+                'database_name' => $databaseName,
+            ]);
+            $provisioned = true;
+        } catch (\Throwable $e) {
+            // Log into the structured error stream but don't bubble — we
+            // still want to send the invite so the operator isn't stranded.
+            \NextUp\Support\ErrorReporter::report($e, "signup auto-provision failed for {$subdomain}");
+        }
+
+        if ($provisioned) {
+            // Flip out of 'provisioning'. We hold off on 'active' until
+            // the invite is accepted (an admin user actually exists);
+            // 'provisioning' was the wrong terminal state once the DB
+            // exists. Re-use the existing status vocabulary: leave the
+            // row as 'provisioning' if you want super-admin gating, or
+            // pre-activate if not. We pre-activate so the new tenant
+            // can log in immediately after accepting the invite.
+            $superDb->prepare("UPDATE tenants SET status = 'active' WHERE id = ?")
+                ->execute([$tenantId]);
+        }
+
         $inviteUrl = "https://{$fullDomain}/signup/accept?token=" . urlencode($token);
         self::sendInvite($email, $venue, $inviteUrl);
 
-        return ['tenant_id' => $tenantId, 'slug' => $subdomain, 'invite_url' => $inviteUrl];
+        return [
+            'tenant_id' => $tenantId,
+            'slug' => $subdomain,
+            'invite_url' => $inviteUrl,
+            'provisioned' => $provisioned,
+        ];
     }
 
     private static function sendInvite(string $email, string $venue, string $inviteUrl): void

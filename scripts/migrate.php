@@ -251,9 +251,39 @@ function applyOne(PDO $db, string $path, bool $dryRun): void
         throw new RuntimeException("Unable to read {$path}");
     }
     echo "    applying: {$name} ... ";
-    $db->exec($sql);
-    $stmt = $db->prepare('INSERT INTO schema_migrations (filename, checksum) VALUES (?, ?)');
-    $stmt->execute([$name, hash_file('sha256', $path)]);
+
+    // Wrap each migration in a transaction so DML-only migrations can roll
+    // back cleanly on failure. DDL in MySQL/InnoDB triggers an implicit
+    // commit — so for DDL-heavy files the rollback is best-effort; the
+    // ledger row only lands after exec() succeeds, so the file will be
+    // retried on the next run (migrations must remain idempotent).
+    $opened = false;
+    if (!$db->inTransaction()) {
+        try {
+            $db->beginTransaction();
+            $opened = true;
+        } catch (Throwable $e) {
+            // Some PDO drivers refuse beginTransaction during DDL; carry on
+            // unwrapped — exec() failure still leaves the ledger row
+            // unwritten, which is the important invariant.
+        }
+    }
+
+    try {
+        $db->exec($sql);
+        $stmt = $db->prepare('INSERT INTO schema_migrations (filename, checksum) VALUES (?, ?)');
+        $stmt->execute([$name, hash_file('sha256', $path)]);
+        if ($opened && $db->inTransaction()) {
+            $db->commit();
+        }
+    } catch (Throwable $e) {
+        if ($opened && $db->inTransaction()) {
+            try { $db->rollBack(); } catch (Throwable) { /* DDL already committed */ }
+        }
+        echo "FAILED\n";
+        throw new RuntimeException("Migration {$name} failed: " . $e->getMessage(), 0, $e);
+    }
+
     echo "ok\n";
 }
 
