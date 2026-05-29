@@ -63,6 +63,17 @@ final class TenantContext
 
     private static function allowed(string $host): bool
     {
+        return self::isAllowedHost($host);
+    }
+
+    /**
+     * Public test seam for the allow-list check. The full resolve()
+     * flow side-effects an HTTP response via Response::json, which is
+     * awkward to unit-test; isAllowedHost is the pure predicate behind
+     * the unknown-host rejection branch.
+     */
+    public static function isAllowedHost(string $host): bool
+    {
         foreach (Env::list('ALLOWED_HOSTS', 'localhost,127.0.0.1') as $allowed) {
             if ($host === $allowed || (str_starts_with($allowed, '*.') && str_ends_with($host, substr($allowed, 1)))) {
                 return true;

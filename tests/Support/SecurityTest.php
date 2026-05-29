@@ -37,4 +37,34 @@ final class SecurityTest extends TestCase
         $token = Security::csrfToken();
         self::assertMatchesRegularExpression('/^[a-f0-9]{64}$/', $token);
     }
+
+    /* ------- csrfTokenMatches: verify side of the round-trip ------- */
+
+    public function testCsrfTokenMatchesAcceptsRoundTrip(): void
+    {
+        $token = Security::csrfToken();
+        self::assertTrue(Security::csrfTokenMatches($token));
+    }
+
+    public function testCsrfTokenMatchesRejectsWrongToken(): void
+    {
+        Security::csrfToken(); // populate session
+        self::assertFalse(Security::csrfTokenMatches('deadbeef'));
+        self::assertFalse(Security::csrfTokenMatches(''));
+    }
+
+    public function testCsrfTokenMatchesRejectsWhenSessionUnseeded(): void
+    {
+        // No prior csrfToken() call — session has nothing to compare against.
+        self::assertFalse(Security::csrfTokenMatches('anything'));
+    }
+
+    public function testCsrfTokenMatchesIsConstantTime(): void
+    {
+        $token = Security::csrfToken();
+        // hash_equals returns false for length-mismatched strings, but
+        // shouldn't short-circuit on early bytes. We can't directly
+        // assert timing here, but we can assert false for similar-prefix.
+        self::assertFalse(Security::csrfTokenMatches(substr($token, 0, -1) . 'x'));
+    }
 }

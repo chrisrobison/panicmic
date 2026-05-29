@@ -68,9 +68,23 @@ final class Security
             return;
         }
         $token = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? Request::input()['csrf'] ?? '';
-        if (!is_string($token) || !hash_equals($_SESSION['csrf'] ?? '', $token)) {
+        if (!self::csrfTokenMatches(is_string($token) ? $token : '')) {
             Response::json(['error' => 'Invalid CSRF token'], 419);
         }
+    }
+
+    /**
+     * Pure predicate used by requireCsrf. Public so unit tests can
+     * exercise the verify side of the round-trip without dealing with
+     * Response::json's exit.
+     */
+    public static function csrfTokenMatches(string $candidate): bool
+    {
+        $expected = $_SESSION['csrf'] ?? '';
+        if (!is_string($expected) || $expected === '') {
+            return false;
+        }
+        return hash_equals($expected, $candidate);
     }
 
     public static function rateLimit(string $key, int $limit, int $windowSeconds): void

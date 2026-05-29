@@ -22,6 +22,7 @@ use NextUp\Services\QueueService;
 use NextUp\Services\SessionService;
 use NextUp\Services\SettingsService;
 use NextUp\Services\SongService;
+use NextUp\Support\AccessLog;
 use NextUp\Support\Env;
 use NextUp\Support\ErrorReporter;
 use NextUp\Support\Request;
@@ -33,6 +34,7 @@ require dirname(__DIR__) . '/src/autoload.php';
 
 Env::load(dirname(__DIR__) . '/.env');
 ErrorReporter::install();
+AccessLog::begin();
 Security::startSession();
 Security::headers();
 
@@ -137,6 +139,9 @@ try {
     $db = $tenantContext->db;
     $tenant = $tenantContext->tenant;
 
+    // Tag this request for the structured access log.
+    $_SERVER['NEXTUP_TENANT_SLUG'] = (string)($tenant['slug'] ?? '');
+
     if (str_starts_with($path, '/files')) {
         $filePath = substr($path, strlen('/files')) ?: '';
         ContentService::serve((string)$tenant['slug'], $filePath);
@@ -156,7 +161,13 @@ try {
         Response::redirect('/admin/login');
     }
 
-    // Honor user deactivation immediately instead of waiting for session expiry.
+    // Register the request-scoped DB so Auth::requireTenantRole can
+    // re-check is_active inside any controller without threading PDO
+    // through every signature.
+    Auth::useDb($db);
+
+    // Honor user deactivation immediately instead of waiting for session
+    // expiry — covers GET routes that don't pass through requireTenantRole.
     if (!empty($_SESSION['tenant_user'])) {
         Auth::ensureSessionUserActive($db);
     }

@@ -93,4 +93,35 @@ final class AuthTest extends DatabaseTestCase
         self::assertNull(Auth::attemptSuperForTenant($this->superDb, 'boss2@x', 'wrong'));
         self::assertArrayNotHasKey('super_admin', $_SESSION);
     }
+
+    /* ------- userHasRole: predicate behind requireTenantRole ------- */
+
+    public function testUserHasRoleRejectsNullUser(): void
+    {
+        self::assertFalse(Auth::userHasRole(null, ['kj']));
+    }
+
+    public function testUserHasRoleRejectsNonArray(): void
+    {
+        self::assertFalse(Auth::userHasRole('not-an-array', ['kj']));
+        self::assertFalse(Auth::userHasRole(42, ['kj']));
+    }
+
+    public function testUserHasRoleAcceptsMatchingRole(): void
+    {
+        $user = ['id' => 1, 'role' => 'kj'];
+        self::assertTrue(Auth::userHasRole($user, ['kj', 'tenant_admin']));
+    }
+
+    public function testUserHasRoleRejectsWrongRole(): void
+    {
+        $user = ['id' => 1, 'role' => 'guest'];
+        self::assertFalse(Auth::userHasRole($user, ['kj', 'tenant_admin']));
+    }
+
+    public function testUserHasRoleRejectsMissingRoleKey(): void
+    {
+        $user = ['id' => 1]; // no 'role' set
+        self::assertFalse(Auth::userHasRole($user, ['kj']));
+    }
 }

@@ -80,7 +80,14 @@ abstract class DatabaseTestCase extends TestCase
             ->execute([$this->tenantId, TEST_TENANT_DOMAIN]);
 
         // Each tenant session is the per-night scope for queue items.
-        $this->tenantDb->exec("INSERT INTO karaoke_sessions (name, starts_at, status) VALUES ('Test Night Session', NOW(), 'active')");
+        // Status is 'live' under the post-007 lifecycle ENUM. Older test
+        // schemas may still accept 'active' — try 'live' first and fall
+        // back so existing CI environments don't break mid-migration.
+        try {
+            $this->tenantDb->exec("INSERT INTO karaoke_sessions (name, starts_at, status) VALUES ('Test Night Session', NOW(), 'live')");
+        } catch (\Throwable) {
+            $this->tenantDb->exec("INSERT INTO karaoke_sessions (name, starts_at, status) VALUES ('Test Night Session', NOW(), 'active')");
+        }
         $this->sessionId = (int)$this->tenantDb->lastInsertId();
         $this->tenantDb
             ->prepare("INSERT INTO display_state (session_id, mode) VALUES (?, 'idle')")

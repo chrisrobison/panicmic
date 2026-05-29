@@ -61,4 +61,32 @@ final class TenantContextTest extends TestCase
         $_SERVER['HTTP_X_FORWARDED_HOST'] = 'first.panicmic.com, hop2.example.com';
         self::assertSame('first.panicmic.com', TenantContext::host());
     }
+
+    public function testAllowsExactHostFromAllowList(): void
+    {
+        $_ENV['ALLOWED_HOSTS'] = 'app.test,bluebird.test';
+        putenv('ALLOWED_HOSTS=app.test,bluebird.test');
+        self::assertTrue(TenantContext::isAllowedHost('app.test'));
+        self::assertTrue(TenantContext::isAllowedHost('bluebird.test'));
+    }
+
+    public function testAllowsWildcardSubdomain(): void
+    {
+        $_ENV['ALLOWED_HOSTS'] = '*.panicmic.com';
+        putenv('ALLOWED_HOSTS=*.panicmic.com');
+        self::assertTrue(TenantContext::isAllowedHost('venue1.panicmic.com'));
+        self::assertTrue(TenantContext::isAllowedHost('any.deep.panicmic.com'));
+    }
+
+    public function testRejectsUnknownHost(): void
+    {
+        $_ENV['ALLOWED_HOSTS'] = 'app.test';
+        putenv('ALLOWED_HOSTS=app.test');
+        self::assertFalse(TenantContext::isAllowedHost('attacker.example'));
+        self::assertFalse(TenantContext::isAllowedHost(''));
+        // Wildcard must be a real subdomain — bare apex shouldn't match.
+        $_ENV['ALLOWED_HOSTS'] = '*.panicmic.com';
+        putenv('ALLOWED_HOSTS=*.panicmic.com');
+        self::assertFalse(TenantContext::isAllowedHost('panicmic.com'));
+    }
 }

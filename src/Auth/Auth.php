@@ -17,15 +17,47 @@ final class Auth
      */
     private static array $activeMemo = [];
 
+    /**
+     * Request-scoped PDO handle that requireTenantRole uses to re-check
+     * is_active without having to pass a connection through every
+     * controller call site. Set by the front controller via useDb().
+     */
+    private static ?PDO $db = null;
+
+    /** Register the tenant DB for this request so role checks can re-verify is_active. */
+    public static function useDb(?PDO $db): void
+    {
+        self::$db = $db;
+    }
+
     public static function requireTenantRole(string ...$roles): void
     {
         if (self::actingAsSuper()) {
             return;
         }
         $user = $_SESSION['tenant_user'] ?? null;
-        if (!is_array($user) || !in_array($user['role'] ?? '', $roles, true)) {
+        if (!self::userHasRole($user, $roles)) {
             Response::json(['error' => 'Authentication required'], 401);
         }
+        // Re-verify the user is still active. The per-request memo keeps
+        // this to one DB roundtrip per request even if multiple routes
+        // chain through requireTenantRole.
+        if (self::$db instanceof PDO) {
+            self::ensureSessionUserActive(self::$db);
+        }
+    }
+
+    /**
+     * Pure predicate behind the role-gate. Public so unit tests can
+     * exercise the role-matching logic without triggering the HTTP exit
+     * inside Response::json.
+     *
+     * @param mixed $user Session payload (any type — only array<string,mixed> with a 'role' key passes).
+     * @param list<string> $roles Roles that should be admitted.
+     */
+    public static function userHasRole(mixed $user, array $roles): bool
+    {
+        return is_array($user) && in_array($user['role'] ?? '', $roles, true);
     }
 
     /**
