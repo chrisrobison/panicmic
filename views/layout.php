@@ -62,6 +62,6 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <main data-page="<?= e($page) ?>">
     <?php require __DIR__ . "/pages/{$page}.php"; ?>
   </main>
-  <script src="<?= e(Url::path('/assets/app.js')) ?>"></script>
+  <script type="module" src="<?= e(Url::path('/assets/main.js')) ?>"></script>
 </body>
 </html>
