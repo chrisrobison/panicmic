@@ -16,7 +16,7 @@ export function readCatalogFilters() {
   };
 }
 
-export async function searchSongs(reset = true) {
+export async function searchSongs(reset = true, { append = false } = {}) {
   if (reset) state.page = 1;
   const filters = { ...readCatalogFilters(), page: state.page, size: state.size };
   state.lastFilters = filters;
@@ -25,24 +25,32 @@ export async function searchSongs(reset = true) {
   const params = new URLSearchParams(filters);
   const data = await api(`${endpoint}?${params.toString()}`);
   state.total = data.total || 0;
-  renderCatalog(data, isAdmin);
-  renderCatalogMeta(data);
+  renderCatalog(data, isAdmin, append);
+  renderCatalogMeta(data, append);
+  return data;
 }
 
-function renderCatalog(data, isAdmin) {
+function renderCatalog(data, isAdmin, append = false) {
   const target = $('[data-song-results]') || $('[data-song-table]');
   if (!target) return;
   const html = (data.songs || []).map(song => isAdmin ? adminSongCard(song) : publicSongButton(song)).join('');
-  target.innerHTML = html || '<p class="muted">No songs found.</p>';
+  if (append) {
+    target.insertAdjacentHTML('beforeend', html);
+  } else {
+    target.innerHTML = html || '<p class="muted">No songs found.</p>';
+  }
 }
 
-function renderCatalogMeta(data) {
+function renderCatalogMeta(data, append = false) {
   const meta = $('[data-catalog-meta]');
   if (meta) {
     const total = data.total ?? (data.songs?.length ?? 0);
     const showing = data.songs?.length ?? 0;
-    const start = total ? ((data.page - 1) * data.size) + 1 : 0;
-    const end = start + showing - 1;
+    const page = data.page || 1;
+    const size = data.size || state.size || 50;
+    // In append mode (infinite scroll) report the cumulative range from the top.
+    const start = total ? (append ? 1 : ((page - 1) * size) + 1) : 0;
+    const end = append ? Math.min(page * size, total) : start + showing - 1;
     const breakdown = (data.local_total !== undefined && data.shared_total !== undefined)
       ? ` (${data.local_total} tenant + ${data.shared_total} shared)`
       : '';

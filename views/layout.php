@@ -49,7 +49,10 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
       <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt=""><?php endif; ?>
       <span><strong><?= e($tenant['venue_name']) ?></strong><small><?= e($tenant['night_name']) ?></small></span>
     </a>
-    <nav>
+    <button class="nav-toggle" type="button" data-nav-toggle aria-label="Menu" aria-controls="primary-nav" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <nav id="primary-nav" data-nav>
       <a href="<?= e(Url::path('/')) ?>">Request</a>
       <a href="<?= e(Url::path('/songs')) ?>">Catalog</a>
       <a href="<?= e(Url::path('/me')) ?>">My Spot</a>

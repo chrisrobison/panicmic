@@ -1,8 +1,10 @@
 <section class="workspace">
   <header class="admin-page-header">
     <div>
-      <h1>Song catalog</h1>
-      <p class="muted">Browse the full catalog. Selections from this page are stored locally and used when you return to request a song.</p>
+      <h1>Song catalog
+        <button class="help-toggle" type="button" data-help-toggle aria-label="About the catalog" aria-expanded="false">?</button>
+      </h1>
+      <p class="muted catalog-help" data-catalog-help>Browse the full catalog. Selections from this page are stored locally and used when you return to request a song.</p>
     </div>
   </header>
   <div class="catalog-toolbar">
@@ -21,11 +23,7 @@
   </div>
   <div class="catalog-meta">
     <span data-catalog-meta>Loading…</span>
-    <div class="pager">
-      <button data-page-prev disabled>‹ Prev</button>
-      <span data-page-indicator></span>
-      <button data-page-next disabled>Next ›</button>
-    </div>
   </div>
   <div data-song-table class="song-grid"></div>
+  <p class="catalog-loading muted" data-catalog-loading hidden>Loading more songs…</p>
 </section>

@@ -1,7 +1,7 @@
 /* pages/public.js — public landing page (song search + request form + queue strip). */
 
 import { $, $$, setStatus, formData } from '../lib/dom.js';
-import { api } from '../lib/api.js';
+import { api, appConfig } from '../lib/api.js';
 import { loadQueue } from '../lib/queue.js';
 import { searchSongs, catalogState } from '../lib/catalog.js';
 import { startEvents } from '../lib/events.js';
@@ -61,7 +61,49 @@ export function init() {
     pick.classList.add('selected');
   });
 
+  // Catalog page (/songs): initial load, help (?) toggle, and infinite scroll.
+  if (appConfig.page === 'songs') {
+    searchSongs(true).catch(() => {});
+    setupCatalogHelpToggle();
+    setupInfiniteScroll();
+  }
+
   // Initial paint + SSE.
   loadQueue().catch(() => {});
   startEvents(() => loadQueue().catch(() => {}));
+}
+
+// (?) icon next to the catalog header reveals the explanation text (used on mobile).
+function setupCatalogHelpToggle() {
+  const toggle = $('[data-help-toggle]');
+  const help = $('[data-catalog-help]');
+  if (!toggle || !help) return;
+  toggle.addEventListener('click', () => {
+    const shown = help.classList.toggle('show');
+    toggle.setAttribute('aria-expanded', shown ? 'true' : 'false');
+  });
+}
+
+// Auto-fetch the next page of songs when the user scrolls near the bottom.
+function setupInfiniteScroll() {
+  const indicator = $('[data-catalog-loading]');
+  let loading = false;
+  const onScroll = async () => {
+    if (loading) return;
+    if (catalogState.page * catalogState.size >= catalogState.total) return; // everything loaded
+    const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 400;
+    if (!nearBottom) return;
+    loading = true;
+    catalogState.page++;
+    if (indicator) indicator.hidden = false;
+    try {
+      await searchSongs(false, { append: true });
+    } catch {
+      catalogState.page--; // roll back so a later scroll can retry
+    } finally {
+      if (indicator) indicator.hidden = true;
+      loading = false;
+    }
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
 }

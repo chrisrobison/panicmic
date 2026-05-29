@@ -10,6 +10,23 @@
 
 import { appConfig } from './lib/api.js';
 
+// Global topbar: collapse nav behind a hamburger on small screens.
+const navToggle = document.querySelector('[data-nav-toggle]');
+const nav = document.querySelector('[data-nav]');
+if (navToggle && nav) {
+  navToggle.addEventListener('click', () => {
+    const open = nav.classList.toggle('open');
+    navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+  // Close the menu after following a link (single-page feel on mobile).
+  nav.addEventListener('click', event => {
+    if (event.target.closest('a')) {
+      nav.classList.remove('open');
+      navToggle.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
 const PAGES = {
   public: () => import('./pages/public.js'),
   songs:  () => import('./pages/public.js'),     // /songs reuses public bindings

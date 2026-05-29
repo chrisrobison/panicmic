@@ -2,15 +2,6 @@
 <?php $sessionStatus = (string)($session['status'] ?? 'live'); ?>
 <?php $isClosed = $sessionStatus === 'closed' || $sessionStatus === 'archived'; ?>
 <section class="hero">
-  <div>
-    <p class="eyebrow">Tonight's karaoke queue</p>
-    <h1><?= e($tenant['night_name']) ?></h1>
-    <?php if ($isClosed): ?>
-      <p>We're closed for tonight. Check back when the next session goes live.</p>
-    <?php else: ?>
-      <p>Find your song, add your name, and watch your place update live.</p>
-    <?php endif; ?>
-  </div>
   <?php if ($isClosed): ?>
     <div class="panel closed-banner" data-session-closed>
       <h2>We're closed for tonight</h2>
