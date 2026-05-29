@@ -6,6 +6,7 @@ use NextUp\Auth\Auth;
 use NextUp\Database\Connection;
 use NextUp\Services\BillingService;
 use NextUp\Http\AuthController;
+use NextUp\Http\BillingController;
 use NextUp\Http\BrandingController;
 use NextUp\Http\ContentController;
 use NextUp\Http\DisplayController;
@@ -64,6 +65,12 @@ try {
     }
     if ($path === '/csrf') {
         Response::json(['csrf' => Security::csrfToken()]);
+    }
+    // Stripe webhook arrives without tenant context and must not be
+    // CSRF-protected. Signature verification inside the controller is
+    // the auth path.
+    if ($path === '/webhooks/stripe' && $method === 'POST') {
+        BillingController::webhook();
     }
     if (str_starts_with($path, '/assets/')) {
         http_response_code(404);
@@ -192,6 +199,8 @@ try {
         '/api/admin/login', '/api/admin/logout',
         '/api/admin/end-impersonation', '/admin/end-impersonation',
         '/api/admin/branding', '/api/admin/settings',
+        // Allow lapsed tenants to reactivate via the billing UI.
+        '/api/billing/checkout', '/api/billing/plans',
     ], true);
     if ($isMutation && !$isBillingExempt && !BillingService::hasAccess($tenant)) {
         Response::json([
@@ -269,6 +278,10 @@ try {
         (bool)preg_match('#^/api/admin/songs/(\d+)$#', $path, $m) && $method === 'DELETE' => SongController::delete($db, (int)$m[1]),
         $path === '/api/admin/content' && $method === 'GET' => ContentController::index($tenant),
         $path === '/api/admin/content' && $method === 'POST' => ContentController::upload($tenant),
+
+        // ----- Self-serve billing (Stripe)
+        $path === '/api/billing/plans' && $method === 'GET' => BillingController::plans(),
+        $path === '/api/billing/checkout' && $method === 'POST' => BillingController::checkout($db, $tenant),
 
         default => Response::json(['error' => 'Not found'], 404),
     };
