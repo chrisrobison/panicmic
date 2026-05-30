@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Support;
+namespace PanicMic\Support;
 
 /**
  * Local-only observability layer.

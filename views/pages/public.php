@@ -1,4 +1,4 @@
-<?php use function NextUp\Support\e; ?>
+<?php use function PanicMic\Support\e; ?>
 <?php $sessionStatus = (string)($session['status'] ?? 'live'); ?>
 <?php $isClosed = $sessionStatus === 'closed' || $sessionStatus === 'archived'; ?>
 <section class="hero">

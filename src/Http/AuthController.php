@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Support\Impersonation;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
-use NextUp\Support\Security;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Support\Impersonation;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
+use PanicMic\Support\Security;
 use PDO;
 
 final class AuthController

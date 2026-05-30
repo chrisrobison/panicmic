@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Support\Security;
-use NextUp\Support\Url;
+use PanicMic\Support\Security;
+use PanicMic\Support\Url;
 
 final class PageRenderer
 {

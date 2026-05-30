@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Services\TenantBrandingService;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Services\TenantBrandingService;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
 
 final class BrandingController
 {

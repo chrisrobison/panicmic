@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use NextUp\Database\Connection;
-use NextUp\Services\SharedCatalogService;
-use NextUp\Support\Env;
+use PanicMic\Database\Connection;
+use PanicMic\Services\SharedCatalogService;
+use PanicMic\Support\Env;
 
 require dirname(__DIR__) . '/src/autoload.php';
 Env::load(dirname(__DIR__) . '/.env');

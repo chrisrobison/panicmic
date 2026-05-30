@@ -1,4 +1,4 @@
-# NextUp — TODO
+# PanicMic — TODO
 
 The original backlog and the phased `PLAN.md` roadmap have been delivered:
 the migration runner, PHPUnit suite, GitHub Actions CI, login rate-limiting,

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use function NextUp\Support\e;
-use NextUp\Auth\Auth;
-use NextUp\Support\Url;
+use function PanicMic\Support\e;
+use PanicMic\Auth\Auth;
+use PanicMic\Support\Url;
 
 $title = $tenant['venue_name'] . ' - ' . $tenant['night_name'];
 $bodyClass = str_replace('-', ' ', $page);
@@ -26,7 +26,7 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <meta name="app-tenant-slug" content="<?= e($tenant['slug'] ?? '') ?>">
   <meta name="app-session-id" content="<?= e((string)($session['id'] ?? '')) ?>">
   <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
-  <style nonce="<?= e(\NextUp\Support\Security::styleNonce()) ?>">
+  <style nonce="<?= e(\PanicMic\Support\Security::styleNonce()) ?>">
     :root {
       --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>;
       --accent: <?= e($tenant['accent_color'] ?? '#facc15') ?>;

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Auth;
+namespace PanicMic\Tests\Auth;
 
-use NextUp\Auth\Auth;
-use NextUp\Tests\Support\DatabaseTestCase;
+use PanicMic\Auth\Auth;
+use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class AuthTest extends DatabaseTestCase
 {

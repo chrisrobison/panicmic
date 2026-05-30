@@ -42,7 +42,7 @@ function renderDisplayWindowsToolbar(screens) {
 }
 
 async function openDisplayWindow(screen) {
-  const target = `nextup_${screen}`;
+  const target = `panicmic_${screen}`;
   const existing = displayWindows.get(screen);
   if (existing && !existing.closed) {
     existing.focus();

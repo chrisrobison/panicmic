@@ -1,5 +1,5 @@
 <?php
-use function NextUp\Support\e;
+use function PanicMic\Support\e;
 ?>
 <section class="signup-shell">
   <div class="signup-card">

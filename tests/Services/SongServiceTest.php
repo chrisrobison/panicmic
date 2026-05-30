@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Services;
+namespace PanicMic\Tests\Services;
 
-use NextUp\Services\SongService;
-use NextUp\Tests\Support\DatabaseTestCase;
+use PanicMic\Services\SongService;
+use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class SongServiceTest extends DatabaseTestCase
 {

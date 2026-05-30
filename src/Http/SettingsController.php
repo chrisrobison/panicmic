@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Services\EventBus;
-use NextUp\Services\SettingsService;
-use NextUp\Services\YouTubeService;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
+use PanicMic\Auth\Auth;
+use PanicMic\Services\EventBus;
+use PanicMic\Services\SettingsService;
+use PanicMic\Services\YouTubeService;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
 use PDO;
 
 final class SettingsController

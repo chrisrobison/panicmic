@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use NextUp\Database\Connection;
-use NextUp\Support\Env;
+use PanicMic\Database\Connection;
+use PanicMic\Support\Env;
 
 require dirname(__DIR__) . '/src/autoload.php';
 
@@ -125,7 +125,7 @@ function dbForScope(string $scope, ?string $tenantDatabase = null): PDO
     // credentials (PROVISION_DB_* — falls back to SUPER_DB_* in
     // Connection::provisioner() if unset).
     if ($scope === 'super') {
-        $name = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+        $name = (string)(Env::get('SUPER_DB_NAME', 'panicmic_super') ?? 'panicmic_super');
         ensureDatabaseExists($name);
         return Connection::provisioner($name);
     }
@@ -136,7 +136,7 @@ function dbForScope(string $scope, ?string $tenantDatabase = null): PDO
 
 /**
  * Make sure $database exists before we try to connect to it. The
- * provisioning user is granted CREATE on the nextup_% pattern, so
+ * provisioning user is granted CREATE on the panicmic_% pattern, so
  * idempotently creating the super or a tenant schema is safe.
  */
 function ensureDatabaseExists(string $database): void
@@ -291,11 +291,11 @@ function runAllTenants(bool $dryRun): void
 {
     // Use provisioner here too — the migrate script should work even
     // before the runtime app user (panicmic) has been provisioned.
-    $superName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+    $superName = (string)(Env::get('SUPER_DB_NAME', 'panicmic_super') ?? 'panicmic_super');
     $super = Connection::provisioner($superName);
     $tenants = $super->query('SELECT slug, database_name FROM tenants ORDER BY slug')->fetchAll();
     if (!$tenants) {
-        echo "No tenants registered in nextup_super.tenants.\n";
+        echo "No tenants registered in panicmic_super.tenants.\n";
         return;
     }
     foreach ($tenants as $t) {
@@ -317,7 +317,7 @@ function statusReport(?string $arg, array $cliArgs): void
         return;
     }
     if ($target === 'tenants') {
-        $superName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+        $superName = (string)(Env::get('SUPER_DB_NAME', 'panicmic_super') ?? 'panicmic_super');
         $tenants = Connection::provisioner($superName)->query('SELECT slug, database_name FROM tenants ORDER BY slug')->fetchAll();
         foreach ($tenants as $t) {
             printStatusForScope('tenant', (string)$t['database_name']);

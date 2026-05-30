@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Support;
+namespace PanicMic\Support;
 
 /**
  * Structured request access log.
@@ -75,7 +75,7 @@ final class AccessLog
     {
         // The front controller stashes the resolved tenant slug in $_SERVER
         // for downstream use; fall back to host header if not set.
-        $slug = $_SERVER['NEXTUP_TENANT_SLUG'] ?? null;
+        $slug = $_SERVER['PANICMIC_TENANT_SLUG'] ?? null;
         return is_string($slug) && $slug !== '' ? $slug : null;
     }
 

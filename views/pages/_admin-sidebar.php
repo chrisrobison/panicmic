@@ -1,7 +1,7 @@
 <?php
-use function NextUp\Support\e;
-use NextUp\Support\Url;
-use NextUp\Auth\Auth;
+use function PanicMic\Support\e;
+use PanicMic\Support\Url;
+use PanicMic\Auth\Auth;
 $current = $current ?? '';
 $links = [
   ['key' => 'dashboard', 'href' => '/admin/dashboard', 'label' => 'Dashboard'],

@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Services;
+namespace PanicMic\Services;
 
-use NextUp\Database\Connection;
-use NextUp\Support\Env;
+use PanicMic\Database\Connection;
+use PanicMic\Support\Env;
 use PDO;
 
 /**
@@ -44,7 +44,7 @@ final class SignupService
 
         $rootDomain = (string)(Env::get('SIGNUP_ROOT_DOMAIN', 'panicmic.com') ?? 'panicmic.com');
         $fullDomain = $subdomain . '.' . $rootDomain;
-        $databaseName = 'nextup_' . str_replace('-', '_', $subdomain);
+        $databaseName = 'panicmic_' . str_replace('-', '_', $subdomain);
 
         // Reject duplicates up-front so users get a friendly error.
         $taken = $superDb->prepare('SELECT id FROM tenant_domains WHERE domain = ? LIMIT 1');
@@ -104,7 +104,7 @@ final class SignupService
         } catch (\Throwable $e) {
             // Log into the structured error stream but don't bubble — we
             // still want to send the invite so the operator isn't stranded.
-            \NextUp\Support\ErrorReporter::report($e, "signup auto-provision failed for {$subdomain}");
+            \PanicMic\Support\ErrorReporter::report($e, "signup auto-provision failed for {$subdomain}");
         }
 
         if ($provisioned) {
@@ -134,8 +134,8 @@ final class SignupService
     {
         Mailer::send(
             $email,
-            "Activate your NextUp account for {$venue}",
-            "Welcome to NextUp.\n\n"
+            "Activate your PanicMic account for {$venue}",
+            "Welcome to PanicMic.\n\n"
                 . "Your venue '{$venue}' is being set up. Click the link below to set your password and start hosting karaoke nights:\n\n"
                 . "  {$inviteUrl}\n\n"
                 . "This link expires in 7 days.\n",

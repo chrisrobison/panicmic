@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Services;
+namespace PanicMic\Tests\Services;
 
-use NextUp\Services\DisplayService;
-use NextUp\Tests\Support\DatabaseTestCase;
+use PanicMic\Services\DisplayService;
+use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class DisplayServiceTest extends DatabaseTestCase
 {

@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 spl_autoload_register(static function (string $class): void {
-    $prefix = 'NextUp\\';
+    $prefix = 'PanicMic\\';
     if (!str_starts_with($class, $prefix)) {
         return;
     }

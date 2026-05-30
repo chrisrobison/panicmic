@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Support;
+namespace PanicMic\Support;
 
 /**
  * Minimal pure-PHP QR Code SVG generator.

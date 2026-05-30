@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tenant;
+namespace PanicMic\Tenant;
 
-use NextUp\Database\Connection;
-use NextUp\Support\Env;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
+use PanicMic\Database\Connection;
+use PanicMic\Support\Env;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
 use PDO;
 
 final class TenantContext
@@ -113,7 +113,7 @@ final class TenantContext
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NextUp - nothing here yet</title>
+<title>PanicMic - nothing here yet</title>
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -136,11 +136,11 @@ final class TenantContext
 <body>
 <main>
   <h1>Nothing here yet</h1>
-  <p>No NextUp venue is configured at <code>{$safeHost}</code>.</p>
+  <p>No PanicMic venue is configured at <code>{$safeHost}</code>.</p>
   <p>If you're a KJ trying to set up a new venue, you can start a free trial. If you're a singer, double-check the link your venue gave you.</p>
   <div class="actions">
     <a class="button" href="{$signup}">Start a venue</a>
-    <a class="button secondary" href="https://{$marketing}/">About NextUp</a>
+    <a class="button secondary" href="https://{$marketing}/">About PanicMic</a>
   </div>
 </main>
 </body>

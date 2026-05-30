@@ -1,9 +1,9 @@
-# NextUp Karaoke SaaS PHP
+# PanicMic Karaoke SaaS PHP
 
-[![CI](https://github.com/chrisrobison/nextup/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisrobison/nextup/actions/workflows/ci.yml)
+[![CI](https://github.com/chrisrobison/panicmic/actions/workflows/ci.yml/badge.svg)](https://github.com/chrisrobison/panicmic/actions/workflows/ci.yml)
 
 Multi-tenant karaoke night management for **KJs** (karaoke jockeys),
-implemented in PHP with PDO and MySQL/MariaDB. NextUp is sold per KJ, not
+implemented in PHP with PDO and MySQL/MariaDB. PanicMic is sold per KJ, not
 per bar: every KJ signs up for their own account, gets their own subdomain
 (`yourname.panicmic.com`), and brings that one console to whatever room
 they're hosting that night. Tenants are selected by the incoming hostname,
@@ -38,7 +38,7 @@ live on the apex (`panicmic.com`); KJ traffic resolves by subdomain.
   billing controls, and impersonation handoff
 - REST API plus Server-Sent Events for live queue, request, announcement, and
   display updates
-- Base-path support for installs at `/`, `/nextup/public`, or another mounted
+- Base-path support for installs at `/`, `/panicmic/public`, or another mounted
   path
 - Tenant-scoped content uploads served through `/files/*` from
   `/content/<tenant-slug>`, with magic-byte upload verification
@@ -58,7 +58,7 @@ live on the apex (`panicmic.com`); KJ traffic resolves by subdomain.
 
 ```bash
 cp .env.example .env
-mysql -uroot -e "CREATE DATABASE nextup_super CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+mysql -uroot -e "CREATE DATABASE panicmic_super CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
 php scripts/migrate.php super
 php scripts/seed.php
 php -S 0.0.0.0:8000 -t public
@@ -117,7 +117,7 @@ connects. The seed still registers `.local` aliases for compatibility, but the
 
 ## Database Layout
 
-`nextup_super` stores SaaS-wide records:
+`panicmic_super` stores SaaS-wide records:
 
 - `tenants`
 - `tenant_domains`
@@ -151,7 +151,7 @@ Run migrations:
 
 ```bash
 php scripts/migrate.php super
-php scripts/migrate.php tenant nextup_bluebird
+php scripts/migrate.php tenant panicmic_bluebird
 ```
 
 ## Developer Workflow
@@ -177,7 +177,7 @@ ledger by marking every migration on disk as applied without re-executing.
 
 ```bash
 php scripts/migrate.php super
-php scripts/migrate.php tenant nextup_bluebird
+php scripts/migrate.php tenant panicmic_bluebird
 php scripts/migrate.php tenants                 # iterate all tenants
 php scripts/migrate.php status tenants
 php scripts/migrate.php super --dry-run
@@ -185,7 +185,7 @@ php scripts/migrate.php super --dry-run
 
 ## Self-Serve SaaS Deployment (panicmic.com)
 
-NextUp is hosted self-serve at `panicmic.com`, with each **KJ** getting their
+PanicMic is hosted self-serve at `panicmic.com`, with each **KJ** getting their
 own subdomain (`bluebird.panicmic.com`, `neon.panicmic.com`, …). The marketing
 landing + signup flow lives on the signup host (`signup.panicmic.com`); KJ
 traffic resolves by subdomain via `tenant_domains`. A single wildcard vhost
@@ -201,7 +201,7 @@ server {
     ssl_certificate     /etc/letsencrypt/live/panicmic.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/panicmic.com/privkey.pem;
 
-    root /var/www/nextup/public;
+    root /var/www/panicmic/public;
     index index.php;
 
     location / {
@@ -234,10 +234,10 @@ a2enmod proxy proxy_fcgi rewrite ssl
     SSLCertificateFile    /etc/letsencrypt/live/panicmic.com/fullchain.pem
     SSLCertificateKeyFile /etc/letsencrypt/live/panicmic.com/privkey.pem
 
-    DocumentRoot /var/www/nextup/public
+    DocumentRoot /var/www/panicmic/public
     DirectoryIndex index.php
 
-    <Directory /var/www/nextup/public>
+    <Directory /var/www/panicmic/public>
         AllowOverride All
         Require all granted
     </Directory>
@@ -273,18 +273,18 @@ TRUST_PROXY=true
 ALLOWED_HOSTS=panicmic.com,*.panicmic.com
 
 SUPER_DB_HOST=127.0.0.1
-SUPER_DB_USER=nextup_app
+SUPER_DB_USER=panicmic_app
 SUPER_DB_PASSWORD=<runtime user, no CREATE>
-SUPER_DB_NAME=nextup_super
+SUPER_DB_NAME=panicmic_super
 
 TENANT_DB_HOST=127.0.0.1
-TENANT_DB_USER=nextup_app
+TENANT_DB_USER=panicmic_app
 TENANT_DB_PASSWORD=<same as above>
-TENANT_DB_PREFIX=nextup_
+TENANT_DB_PREFIX=panicmic_
 
 # Provisioning user — needs CREATE/ALTER/DROP so signup can create a new
 # KJ's database. Falls back to SUPER_DB_* if unset.
-PROVISION_DB_USER=nextup_admin
+PROVISION_DB_USER=panicmic_admin
 PROVISION_DB_PASSWORD=<elevated>
 
 SIGNUP_ROOT_DOMAIN=panicmic.com
@@ -318,12 +318,12 @@ YOUTUBE_AUTO_ATTACH=true
 ### Bootstrap on a fresh server
 
 ```bash
-git clone … /var/www/nextup
-cd /var/www/nextup
+git clone … /var/www/panicmic
+cd /var/www/panicmic
 cp .env.example .env && vi .env       # fill in production values
 
 # Run as a DBA user with CREATE rights (separate from the app user).
-mysql -uroot -e "CREATE DATABASE nextup_super CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+mysql -uroot -e "CREATE DATABASE panicmic_super CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 php scripts/migrate.php super
 
 # Seed the super-admin login.
@@ -412,9 +412,9 @@ against existing schemas:
 
 ```sql
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE
-  ON `nextup_super`.* TO 'nextup_app'@'%';
+  ON `panicmic_super`.* TO 'panicmic_app'@'%';
 GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE
-  ON `nextup_<tenant>`.* TO 'nextup_app'@'%';
+  ON `panicmic_<tenant>`.* TO 'panicmic_app'@'%';
 ```
 
 Self-serve signup needs to create a new KJ's database on the fly, so set the
@@ -423,8 +423,8 @@ same user backs `scripts/migrate.php`. Keep it distinct from the runtime app
 user:
 
 ```sql
-GRANT ALL PRIVILEGES ON `nextup_super`.* TO 'nextup_admin'@'127.0.0.1';
-GRANT ALL PRIVILEGES ON `nextup_%`.*     TO 'nextup_admin'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON `panicmic_super`.* TO 'panicmic_admin'@'127.0.0.1';
+GRANT ALL PRIVILEGES ON `panicmic_%`.*     TO 'panicmic_admin'@'127.0.0.1';
 ```
 
 If you prefer not to grant runtime provisioning rights at all, leave
@@ -434,10 +434,10 @@ from a deploy host instead.
 ## Apache Under a Subdirectory
 
 If your Apache vhost points at the project root and the app is reached at
-`/nextup/public`, set this in `.env`:
+`/panicmic/public`, set this in `.env`:
 
 ```env
-APP_BASE_PATH=/nextup/public
+APP_BASE_PATH=/panicmic/public
 ```
 
 The included `public/.htaccess` uses `mod_rewrite` to route clean URLs through
@@ -447,7 +447,7 @@ the public directory:
 ```apache
 LoadModule rewrite_module libexec/apache2/mod_rewrite.so
 
-<Directory "/var/www/nextup/public">
+<Directory "/var/www/panicmic/public">
     AllowOverride All
     Require all granted
 </Directory>
@@ -455,9 +455,9 @@ LoadModule rewrite_module libexec/apache2/mod_rewrite.so
 
 With that setup, use URLs such as:
 
-- `http://bluebird.panicmic.com/nextup/public/`
-- `http://bluebird.panicmic.com/nextup/public/admin/dashboard`
-- `http://bluebird.panicmic.com/nextup/public/files/example.mp4`
+- `http://bluebird.panicmic.com/panicmic/public/`
+- `http://bluebird.panicmic.com/panicmic/public/admin/dashboard`
+- `http://bluebird.panicmic.com/panicmic/public/files/example.mp4`
 
 ## Tenant Content
 
@@ -465,7 +465,7 @@ KJs can upload images, videos, audio, and PDFs from `Admin -> Content`. Files
 are stored under:
 
 ```text
-/var/www/nextup/content/<tenant-slug>/
+/var/www/panicmic/content/<tenant-slug>/
 ```
 
 Uploads are checked with `finfo_file` so a renamed `.exe → .png` is rejected at
@@ -492,8 +492,8 @@ from the queue with `Find video`.
 After pulling this feature into an existing tenant database, run:
 
 ```bash
-php scripts/migrate.php tenant nextup_bluebird
-php scripts/migrate.php tenant nextup_neon
+php scripts/migrate.php tenant panicmic_bluebird
+php scripts/migrate.php tenant panicmic_neon
 ```
 
 ## Manual Video Links
@@ -532,7 +532,7 @@ adds a button to the operator dashboard that opens a new window at
 
 The KJ console talks to its own popped-out display windows via the browser's
 native `BroadcastChannel`, not the network. Channel name is
-`nextup:display:<tenant-slug>:<session-id>`. The server stays the source of
+`panicmic:display:<tenant-slug>:<session-id>`. The server stays the source of
 truth — every command also POSTs to `/api/display/state` — so a reloaded
 display window recovers its state by fetching `/api/display/state?screen=…` and
 re-rendering. Cross-device viewers (singer phones, a projector running off a

@@ -1,6 +1,6 @@
 /* broadcast.js — same-browser BroadcastChannel for operator ↔ display.
  *
- * Channel name: `nextup:display:{tenantSlug}:{sessionId}` (per PLAN.md
+ * Channel name: `panicmic:display:{tenantSlug}:{sessionId}` (per PLAN.md
  * Phase 5.3). Display windows subscribe and refresh authoritative
  * server state on any received command — the bus is a cache invalidation
  * cue, not a data path. Cross-device viewers still get
@@ -13,7 +13,7 @@ const broadcast = {
   channel: null,
   open() {
     if (this.channel || !window.BroadcastChannel) return this.channel;
-    const name = `nextup:display:${appConfig.tenantSlug || 'unknown'}:${appConfig.sessionId || '0'}`;
+    const name = `panicmic:display:${appConfig.tenantSlug || 'unknown'}:${appConfig.sessionId || '0'}`;
     this.channel = new BroadcastChannel(name);
     return this.channel;
   },

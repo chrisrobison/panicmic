@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Support;
+namespace PanicMic\Tests\Support;
 
-use NextUp\Support\Security;
+use PanicMic\Support\Security;
 use PHPUnit\Framework\TestCase;
 
 final class SecurityTest extends TestCase

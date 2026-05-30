@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Services;
+namespace PanicMic\Services;
 
 use PDO;
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Support;
+namespace PanicMic\Tests\Support;
 
 use PDO;
 use PHPUnit\Framework\TestCase;
@@ -20,8 +20,8 @@ abstract class DatabaseTestCase extends TestCase
 
     protected function setUp(): void
     {
-        if (!defined('NEXTUP_TEST_DB_AVAILABLE')) {
-            self::markTestSkipped('MySQL test schemas unavailable: ' . (defined('NEXTUP_TEST_DB_UNAVAILABLE') ? constant('NEXTUP_TEST_DB_UNAVAILABLE') : 'unknown'));
+        if (!defined('PANICMIC_TEST_DB_AVAILABLE')) {
+            self::markTestSkipped('MySQL test schemas unavailable: ' . (defined('PANICMIC_TEST_DB_UNAVAILABLE') ? constant('PANICMIC_TEST_DB_UNAVAILABLE') : 'unknown'));
         }
         $this->superDb = $this->connect(TEST_SUPER_DB);
         $this->tenantDb = $this->connect(TEST_TENANT_DB);
@@ -31,10 +31,10 @@ abstract class DatabaseTestCase extends TestCase
 
     private function connect(string $database): PDO
     {
-        $host = \NextUp\Support\Env::get('SUPER_DB_HOST', '127.0.0.1');
-        $port = \NextUp\Support\Env::get('SUPER_DB_PORT', '3306');
-        $user = \NextUp\Support\Env::get('SUPER_DB_USER', 'root') ?? 'root';
-        $pass = \NextUp\Support\Env::get('SUPER_DB_PASSWORD', '') ?? '';
+        $host = \PanicMic\Support\Env::get('SUPER_DB_HOST', '127.0.0.1');
+        $port = \PanicMic\Support\Env::get('SUPER_DB_PORT', '3306');
+        $user = \PanicMic\Support\Env::get('SUPER_DB_USER', 'root') ?? 'root';
+        $pass = \PanicMic\Support\Env::get('SUPER_DB_PASSWORD', '') ?? '';
         return new PDO(
             "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4",
             $user,

@@ -1,7 +1,7 @@
 <?php
-use NextUp\Support\QrCode;
-use NextUp\Support\Url;
-use function NextUp\Support\e;
+use PanicMic\Support\QrCode;
+use PanicMic\Support\Url;
+use function PanicMic\Support\e;
 
 $requestUrl = $tenant['public_request_url'] ?: ('http://' . ($_SERVER['HTTP_HOST'] ?? '') . Url::path('/'));
 $screenId = preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) ?: 'main';

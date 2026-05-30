@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Services\DisplayService;
-use NextUp\Services\EventBus;
-use NextUp\Services\QueueService;
-use NextUp\Services\YouTubeService;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
-use NextUp\Support\Security;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Services\DisplayService;
+use PanicMic\Services\EventBus;
+use PanicMic\Services\QueueService;
+use PanicMic\Services\YouTubeService;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
+use PanicMic\Support\Security;
 use PDO;
 
 final class QueueController

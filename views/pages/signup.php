@@ -1,6 +1,6 @@
 <?php
-use function NextUp\Support\e;
-use NextUp\Support\Env;
+use function PanicMic\Support\e;
+use PanicMic\Support\Env;
 $rootDomain = (string)(Env::get('SIGNUP_ROOT_DOMAIN', 'panicmic.com') ?? 'panicmic.com');
 ?>
 <section class="signup-shell">

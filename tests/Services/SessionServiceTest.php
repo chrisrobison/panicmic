@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Services;
+namespace PanicMic\Tests\Services;
 
-use NextUp\Services\QueueService;
-use NextUp\Services\SessionService;
-use NextUp\Services\SongService;
-use NextUp\Tests\Support\DatabaseTestCase;
+use PanicMic\Services\QueueService;
+use PanicMic\Services\SessionService;
+use PanicMic\Services\SongService;
+use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class SessionServiceTest extends DatabaseTestCase
 {

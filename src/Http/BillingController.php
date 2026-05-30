@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Services\BillingService;
-use NextUp\Services\StripeService;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Services\BillingService;
+use PanicMic\Services\StripeService;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
 use PDO;
 
 /**
@@ -47,7 +47,7 @@ final class BillingController
             $url = StripeService::createCheckoutSession($super, $row, $planCode, $host);
             Response::json(['url' => $url]);
         } catch (\Throwable $e) {
-            \NextUp\Support\ErrorReporter::report($e, 'stripe checkout');
+            \PanicMic\Support\ErrorReporter::report($e, 'stripe checkout');
             Response::json(['error' => $e->getMessage()], 500);
         }
     }
@@ -69,7 +69,7 @@ final class BillingController
             // 5xx triggers retries (good for transient DB failures).
             $msg = $e->getMessage();
             $code = str_contains($msg, 'signature') || str_contains($msg, 'Malformed') ? 400 : 500;
-            \NextUp\Support\ErrorReporter::report($e, 'stripe webhook');
+            \PanicMic\Support\ErrorReporter::report($e, 'stripe webhook');
             Response::json(['error' => $msg], $code);
         }
     }

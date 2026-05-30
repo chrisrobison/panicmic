@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Services;
+namespace PanicMic\Tests\Services;
 
-use NextUp\Services\SignupService;
-use NextUp\Tests\Support\DatabaseTestCase;
+use PanicMic\Services\SignupService;
+use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class SignupServiceTest extends DatabaseTestCase
 {
@@ -33,7 +33,7 @@ final class SignupServiceTest extends DatabaseTestCase
         // retry — accept either outcome so the test isn't brittle to
         // local MySQL grants.
         self::assertContains($tenant['status'], ['active', 'provisioning']);
-        self::assertSame('nextup_newvenue', $tenant['database_name']);
+        self::assertSame('panicmic_newvenue', $tenant['database_name']);
 
         $invite = $this->superDb->query("SELECT * FROM tenant_invites WHERE tenant_id = {$result['tenant_id']}")->fetch();
         self::assertSame('kj@example.com', $invite['email']);

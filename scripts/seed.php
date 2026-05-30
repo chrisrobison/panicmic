@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use NextUp\Database\Connection;
-use NextUp\Services\ContentService;
-use NextUp\Support\Env;
+use PanicMic\Database\Connection;
+use PanicMic\Services\ContentService;
+use PanicMic\Support\Env;
 
 require dirname(__DIR__) . '/src/autoload.php';
 
@@ -12,7 +12,7 @@ Env::load(dirname(__DIR__) . '/.env');
 
 // seed.php does DDL (CREATE DATABASE, CREATE TABLE via migrations) so
 // always use the elevated provisioning credential.
-$superDbName = (string)(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super');
+$superDbName = (string)(Env::get('SUPER_DB_NAME', 'panicmic_super') ?? 'panicmic_super');
 $super = Connection::provisioner($superDbName);
 
 /** Apply every tenant migration in order to a fresh tenant DB. */
@@ -38,7 +38,7 @@ $tenants = [
         'slug' => 'bluebird',
         'venue_name' => 'Bluebird Bar',
         'night_name' => 'Bluebird Karaoke',
-        'database_name' => 'nextup_bluebird',
+        'database_name' => 'panicmic_bluebird',
         'domain' => 'bluebird.panicmic.com',
         'aliases' => ['bluebird.local'],
         'primary_color' => '#23d18b',
@@ -48,7 +48,7 @@ $tenants = [
         'slug' => 'neon',
         'venue_name' => 'Neon Room',
         'night_name' => 'Neon Karaoke Club',
-        'database_name' => 'nextup_neon',
+        'database_name' => 'panicmic_neon',
         'domain' => 'neon.panicmic.com',
         'aliases' => ['neon.local'],
         'primary_color' => '#38bdf8',

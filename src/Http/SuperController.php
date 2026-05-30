@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Services\BillingService;
-use NextUp\Services\ContentService;
-use NextUp\Services\SharedCatalogService;
-use NextUp\Support\Impersonation;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
-use NextUp\Support\Security;
-use NextUp\Support\Url;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Services\BillingService;
+use PanicMic\Services\ContentService;
+use PanicMic\Services\SharedCatalogService;
+use PanicMic\Support\Impersonation;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
+use PanicMic\Support\Security;
+use PanicMic\Support\Url;
 use PDO;
 
 /**
@@ -130,7 +130,7 @@ final class SuperController
     {
         PageRenderer::render(
             'super-login',
-            ['venue_name' => 'NextUp', 'night_name' => 'Super Admin', 'primary_color' => '#22c55e', 'accent_color' => '#facc15'],
+            ['venue_name' => 'PanicMic', 'night_name' => 'Super Admin', 'primary_color' => '#22c55e', 'accent_color' => '#facc15'],
             ['id' => 0, 'name' => 'Super Admin'],
         );
     }
@@ -160,7 +160,7 @@ final class SuperController
         }
         PageRenderer::render(
             'super-tenants',
-            ['venue_name' => 'NextUp', 'night_name' => 'Super Admin', 'primary_color' => '#22c55e', 'accent_color' => '#facc15'],
+            ['venue_name' => 'PanicMic', 'night_name' => 'Super Admin', 'primary_color' => '#22c55e', 'accent_color' => '#facc15'],
             ['id' => 0, 'name' => 'Super Admin'],
         );
     }
@@ -172,7 +172,7 @@ final class SuperController
         }
         PageRenderer::render(
             'super-catalog',
-            ['venue_name' => 'NextUp', 'night_name' => 'Shared Catalog', 'primary_color' => '#22c55e', 'accent_color' => '#facc15'],
+            ['venue_name' => 'PanicMic', 'night_name' => 'Shared Catalog', 'primary_color' => '#22c55e', 'accent_color' => '#facc15'],
             ['id' => 0, 'name' => 'Super Admin'],
         );
     }
@@ -226,7 +226,7 @@ final class SuperController
         // duplicating the CREATE DATABASE + migrations sequence. The
         // service uses Connection::provisioner() internally for the
         // elevated DDL credentials introduced in Phase 8.
-        \NextUp\Services\TenantProvisioner::provision($tenant);
+        \PanicMic\Services\TenantProvisioner::provision($tenant);
     }
 
     private static function generateHandoff(PDO $db, int $tenantId): never

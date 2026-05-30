@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Database;
+namespace PanicMic\Database;
 
-use NextUp\Support\Env;
+use PanicMic\Support\Env;
 use PDO;
 
 final class Connection
@@ -18,7 +18,7 @@ final class Connection
     public static function super(): PDO
     {
         if (!self::$super) {
-            self::$super = self::make(Env::get('SUPER_DB_NAME', 'nextup_super') ?? 'nextup_super', 'SUPER_DB');
+            self::$super = self::make(Env::get('SUPER_DB_NAME', 'panicmic_super') ?? 'panicmic_super', 'SUPER_DB');
         }
         return self::$super;
     }

@@ -6,19 +6,19 @@ declare(strict_types=1);
  * Test bootstrap.
  *
  * - Loads .env so DB credentials are available.
- * - Ensures nextup_test_super and nextup_test_tenant schemas exist and
+ * - Ensures panicmic_test_super and panicmic_test_tenant schemas exist and
  *   migrations have been applied to them.
  * - Skips DB-dependent tests gracefully if MySQL is unreachable.
  *
- * Tests that need a clean DB extend NextUp\Tests\DatabaseTestCase, which
+ * Tests that need a clean DB extend PanicMic\Tests\DatabaseTestCase, which
  * truncates tables in setUp().
  */
 
 require dirname(__DIR__) . '/src/autoload.php';
 
-// Test-only autoloader: NextUp\Tests\ → tests/
+// Test-only autoloader: PanicMic\Tests\ → tests/
 spl_autoload_register(static function (string $class): void {
-    $prefix = 'NextUp\\Tests\\';
+    $prefix = 'PanicMic\\Tests\\';
     if (!str_starts_with($class, $prefix)) {
         return;
     }
@@ -28,15 +28,15 @@ spl_autoload_register(static function (string $class): void {
     }
 });
 
-use NextUp\Support\Env;
+use PanicMic\Support\Env;
 
 Env::load(dirname(__DIR__) . '/.env');
 
 // Disable secure session cookies during tests since there's no HTTP layer.
 $_ENV['APP_ENV'] = 'test';
 
-const TEST_SUPER_DB  = 'nextup_test_super';
-const TEST_TENANT_DB = 'nextup_test_tenant';
+const TEST_SUPER_DB  = 'panicmic_test_super';
+const TEST_TENANT_DB = 'panicmic_test_tenant';
 const TEST_TENANT_SLUG   = 'testbar';
 const TEST_TENANT_DOMAIN = 'test.local';
 
@@ -44,8 +44,8 @@ try {
     // Tests do DROP DATABASE / CREATE DATABASE for the test schemas,
     // which needs DDL privileges. Use PROVISION_DB_* when set, otherwise
     // fall back to SUPER_DB_* (the old dev pattern where root was used
-    // for everything). The test schemas (nextup_test_*) match the
-    // nextup_% pattern, so the provisioning user can drop/create them.
+    // for everything). The test schemas (panicmic_test_*) match the
+    // panicmic_% pattern, so the provisioning user can drop/create them.
     $dbaUser = (string)(Env::get('PROVISION_DB_USER', '') ?? '');
     $prefix = $dbaUser !== '' ? 'PROVISION_DB' : 'SUPER_DB';
     $rootDsn = sprintf(
@@ -61,13 +61,13 @@ try {
     );
 } catch (Throwable $e) {
     fwrite(STDERR, "WARNING: MySQL unreachable, DB-backed tests will be skipped: " . $e->getMessage() . "\n");
-    define('NEXTUP_TEST_DB_UNAVAILABLE', $e->getMessage());
+    define('PANICMIC_TEST_DB_UNAVAILABLE', $e->getMessage());
     return;
 }
 
 // Drop and recreate test schemas so non-idempotent migrations (e.g. raw
 // CREATE INDEX) re-apply cleanly on every test run. The test schemas are
-// namespaced (nextup_test_*) so this only nukes test data.
+// namespaced (panicmic_test_*) so this only nukes test data.
 $rootPdo->exec("DROP DATABASE IF EXISTS `" . TEST_SUPER_DB . "`");
 $rootPdo->exec("DROP DATABASE IF EXISTS `" . TEST_TENANT_DB . "`");
 $rootPdo->exec("CREATE DATABASE `" . TEST_SUPER_DB . "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
@@ -92,7 +92,7 @@ $super->exec(
 $_ENV['SUPER_DB_NAME'] = TEST_SUPER_DB;
 putenv('SUPER_DB_NAME=' . TEST_SUPER_DB);
 
-define('NEXTUP_TEST_DB_AVAILABLE', true);
+define('PANICMIC_TEST_DB_AVAILABLE', true);
 
 /* -------------------------------------------------------------- */
 

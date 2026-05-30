@@ -21,7 +21,7 @@ jobs:
         image: mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: nextup_super
+          MYSQL_DATABASE: panicmic_super
         ports:
           - 3306:3306
         options: >-
@@ -55,7 +55,7 @@ jobs:
           cat > .env <<EOF
           APP_ENV=test
           APP_BASE_PATH=
-          SESSION_NAME=nextup_sid
+          SESSION_NAME=panicmic_sid
           SESSION_SECRET=ci-session-secret
           CSRF_SECRET=ci-csrf-secret
           TRUST_PROXY=false
@@ -64,12 +64,12 @@ jobs:
           SUPER_DB_PORT=3306
           SUPER_DB_USER=root
           SUPER_DB_PASSWORD=root
-          SUPER_DB_NAME=nextup_super
+          SUPER_DB_NAME=panicmic_super
           TENANT_DB_HOST=127.0.0.1
           TENANT_DB_PORT=3306
           TENANT_DB_USER=root
           TENANT_DB_PASSWORD=root
-          TENANT_DB_PREFIX=nextup_
+          TENANT_DB_PREFIX=panicmic_
           EOF
 
       - name: Wait for MySQL

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Support;
+namespace PanicMic\Support;
 
 final class Security
 {
     public static function startSession(): void
     {
         $secure = (Env::get('APP_ENV') === 'production');
-        session_name(Env::get('SESSION_NAME', 'nextup_sid') ?? 'nextup_sid');
+        session_name(Env::get('SESSION_NAME', 'panicmic_sid') ?? 'panicmic_sid');
         session_set_cookie_params([
             'lifetime' => 60 * 60 * 12,
             'path' => '/',

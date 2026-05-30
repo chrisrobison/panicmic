@@ -1,4 +1,4 @@
-<?php use function NextUp\Support\e; use NextUp\Support\Url; ?>
+<?php use function PanicMic\Support\e; use PanicMic\Support\Url; ?>
 <section class="workspace super-workspace">
   <nav class="super-nav">
     <a class="active" href="<?= e(Url::path('/super/tenants')) ?>">Tenants</a>
@@ -37,7 +37,7 @@
       <label>Slug<input name="slug" required></label>
       <label>Venue name<input name="venue_name" required></label>
       <label>Night name<input name="night_name" required></label>
-      <label>Database<input name="database_name" placeholder="nextup_example" required></label>
+      <label>Database<input name="database_name" placeholder="panicmic_example" required></label>
       <label>Timezone<input name="timezone" value="America/Los_Angeles"></label>
       <label>Signup mode<select name="signup_mode"><option>both</option><option>display_name</option><option>account</option></select></label>
       <button class="primary">Create tenant</button>

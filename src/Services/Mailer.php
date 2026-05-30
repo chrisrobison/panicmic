@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Services;
+namespace PanicMic\Services;
 
-use NextUp\Support\Env;
+use PanicMic\Support\Env;
 
 /**
  * Minimal mailer abstraction.
@@ -26,7 +26,7 @@ final class Mailer
     {
         $driver = strtolower((string)(Env::get('MAIL_DRIVER', 'log') ?? 'log'));
         $from = (string)(Env::get('MAIL_FROM', 'no-reply@example.com') ?? 'no-reply@example.com');
-        $fromName = (string)(Env::get('MAIL_FROM_NAME', 'NextUp') ?? 'NextUp');
+        $fromName = (string)(Env::get('MAIL_FROM_NAME', 'PanicMic') ?? 'PanicMic');
 
         return match ($driver) {
             'postmark' => self::sendPostmark($to, $from, $fromName, $subject, $body, $headers),

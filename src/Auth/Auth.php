@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Auth;
+namespace PanicMic\Auth;
 
-use NextUp\Support\Response;
+use PanicMic\Support\Response;
 use PDO;
 
 final class Auth

@@ -1,4 +1,4 @@
-<?php use function NextUp\Support\e; use NextUp\Support\Url; ?>
+<?php use function PanicMic\Support\e; use PanicMic\Support\Url; ?>
 <section class="workspace super-workspace">
   <nav class="super-nav">
     <a href="<?= e(Url::path('/super/tenants')) ?>">Tenants</a>

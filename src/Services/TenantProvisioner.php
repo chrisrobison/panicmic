@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Services;
+namespace PanicMic\Services;
 
-use NextUp\Database\Connection;
+use PanicMic\Database\Connection;
 
 /**
  * Idempotent tenant database provisioner. Pulled out of SuperController

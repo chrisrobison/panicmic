@@ -1,7 +1,7 @@
 <?php
-use function NextUp\Support\e;
-use NextUp\Support\QrCode;
-use NextUp\Support\Url;
+use function PanicMic\Support\e;
+use PanicMic\Support\QrCode;
+use PanicMic\Support\Url;
 $current = 'dashboard';
 $host = $_SERVER['HTTP_HOST'] ?? '';
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';

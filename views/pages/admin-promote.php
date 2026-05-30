@@ -1,7 +1,7 @@
 <?php
-use NextUp\Support\QrCode;
-use NextUp\Support\Url;
-use function NextUp\Support\e;
+use PanicMic\Support\QrCode;
+use PanicMic\Support\Url;
+use function PanicMic\Support\e;
 
 $current = 'promote';
 

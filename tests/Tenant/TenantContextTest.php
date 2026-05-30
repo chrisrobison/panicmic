@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Tenant;
+namespace PanicMic\Tests\Tenant;
 
-use NextUp\Support\Env;
-use NextUp\Tenant\TenantContext;
+use PanicMic\Support\Env;
+use PanicMic\Tenant\TenantContext;
 use PHPUnit\Framework\TestCase;
 
 final class TenantContextTest extends TestCase

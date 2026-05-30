@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Database\Connection;
-use NextUp\Services\SignupService;
-use NextUp\Support\Env;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
+use PanicMic\Database\Connection;
+use PanicMic\Services\SignupService;
+use PanicMic\Support\Env;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
 
 final class SignupController
 {
@@ -21,7 +21,7 @@ final class SignupController
         PageRenderer::render(
             'signup',
             [
-                'venue_name' => 'NextUp',
+                'venue_name' => 'PanicMic',
                 'night_name' => 'Get started',
                 'primary_color' => '#22c55e',
                 'accent_color' => '#facc15',
@@ -69,7 +69,7 @@ final class SignupController
         PageRenderer::render(
             'signup-accept',
             [
-                'venue_name' => 'NextUp',
+                'venue_name' => 'PanicMic',
                 'night_name' => 'Activate your account',
                 'primary_color' => '#22c55e',
                 'accent_color' => '#facc15',

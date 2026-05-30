@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Services\ContentService;
-use NextUp\Support\Response;
-use NextUp\Support\Url;
+use PanicMic\Auth\Auth;
+use PanicMic\Services\ContentService;
+use PanicMic\Support\Response;
+use PanicMic\Support\Url;
 
 final class ContentController
 {

@@ -1,6 +1,6 @@
 <?php
-use function NextUp\Support\e;
-use NextUp\Support\Url;
+use function PanicMic\Support\e;
+use PanicMic\Support\Url;
 ?>
 <section class="workspace narrow help-page">
   <header class="admin-page-header">

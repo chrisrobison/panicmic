@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Http;
+namespace PanicMic\Http;
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Services\DisplayService;
-use NextUp\Services\EventBus;
-use NextUp\Services\QueueService;
-use NextUp\Services\SessionService;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Services\DisplayService;
+use PanicMic\Services\EventBus;
+use PanicMic\Services\QueueService;
+use PanicMic\Services\SessionService;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
 use PDO;
 
 final class SessionController

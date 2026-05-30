@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Tests\Support;
+namespace PanicMic\Tests\Support;
 
-use NextUp\Support\Impersonation;
+use PanicMic\Support\Impersonation;
 use PHPUnit\Framework\TestCase;
 
 final class ImpersonationTest extends TestCase

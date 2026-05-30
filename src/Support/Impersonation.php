@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace NextUp\Support;
+namespace PanicMic\Support;
 
 final class Impersonation
 {
@@ -43,7 +43,7 @@ final class Impersonation
     private static function secret(): string
     {
         $secret = (string)(Env::get('CSRF_SECRET', '') ?? '');
-        return $secret !== '' ? $secret : 'nextup-default-do-not-use-in-production';
+        return $secret !== '' ? $secret : 'panicmic-default-do-not-use-in-production';
     }
 
     private static function base64UrlEncode(string $value): string

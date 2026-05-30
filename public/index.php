@@ -2,34 +2,34 @@
 
 declare(strict_types=1);
 
-use NextUp\Auth\Auth;
-use NextUp\Database\Connection;
-use NextUp\Services\BillingService;
-use NextUp\Http\AuthController;
-use NextUp\Http\BillingController;
-use NextUp\Http\BrandingController;
-use NextUp\Http\ContentController;
-use NextUp\Http\DisplayController;
-use NextUp\Http\PageRenderer;
-use NextUp\Http\QueueController;
-use NextUp\Http\SessionController;
-use NextUp\Http\SettingsController;
-use NextUp\Http\SignupController;
-use NextUp\Http\SongController;
-use NextUp\Http\SuperController;
-use NextUp\Services\ContentService;
-use NextUp\Services\DisplayService;
-use NextUp\Services\QueueService;
-use NextUp\Services\SessionService;
-use NextUp\Services\SettingsService;
-use NextUp\Services\SongService;
-use NextUp\Support\AccessLog;
-use NextUp\Support\Env;
-use NextUp\Support\ErrorReporter;
-use NextUp\Support\Request;
-use NextUp\Support\Response;
-use NextUp\Support\Security;
-use NextUp\Tenant\TenantContext;
+use PanicMic\Auth\Auth;
+use PanicMic\Database\Connection;
+use PanicMic\Services\BillingService;
+use PanicMic\Http\AuthController;
+use PanicMic\Http\BillingController;
+use PanicMic\Http\BrandingController;
+use PanicMic\Http\ContentController;
+use PanicMic\Http\DisplayController;
+use PanicMic\Http\PageRenderer;
+use PanicMic\Http\QueueController;
+use PanicMic\Http\SessionController;
+use PanicMic\Http\SettingsController;
+use PanicMic\Http\SignupController;
+use PanicMic\Http\SongController;
+use PanicMic\Http\SuperController;
+use PanicMic\Services\ContentService;
+use PanicMic\Services\DisplayService;
+use PanicMic\Services\QueueService;
+use PanicMic\Services\SessionService;
+use PanicMic\Services\SettingsService;
+use PanicMic\Services\SongService;
+use PanicMic\Support\AccessLog;
+use PanicMic\Support\Env;
+use PanicMic\Support\ErrorReporter;
+use PanicMic\Support\Request;
+use PanicMic\Support\Response;
+use PanicMic\Support\Security;
+use PanicMic\Tenant\TenantContext;
 
 require dirname(__DIR__) . '/src/autoload.php';
 
@@ -147,7 +147,7 @@ try {
     $tenant = $tenantContext->tenant;
 
     // Tag this request for the structured access log.
-    $_SERVER['NEXTUP_TENANT_SLUG'] = (string)($tenant['slug'] ?? '');
+    $_SERVER['PANICMIC_TENANT_SLUG'] = (string)($tenant['slug'] ?? '');
 
     if (str_starts_with($path, '/files')) {
         $filePath = substr($path, strlen('/files')) ?: '';

@@ -1,6 +1,6 @@
 <?php
-use function NextUp\Support\e;
-use NextUp\Support\Url;
+use function PanicMic\Support\e;
+use PanicMic\Support\Url;
 $current = 'help';
 ?>
 <section class="admin-layout">

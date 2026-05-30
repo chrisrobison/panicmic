@@ -1,4 +1,4 @@
-# NextUp developer workflow
+# PanicMic developer workflow
 #
 # Zero runtime dependencies; dev tools (PHPUnit, PHPStan) ship as PHARs
 # downloaded into ./tools/ by `make tools`.
