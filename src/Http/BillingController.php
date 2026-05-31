@@ -83,4 +83,16 @@ final class BillingController
         Auth::requireTenantRole('tenant_admin');
         Response::json(['plans' => BillingService::plans(Connection::super())]);
     }
+
+    /**
+     * GET /api/admin/billing — read-only plan/usage snapshot for the
+     * settings panel: plan, venue usage, KJ seats, projected total.
+     *
+     * @param array<string,mixed> $tenant
+     */
+    public static function summary(PDO $db, array $tenant): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+        Response::json(['billing' => BillingService::summary($db, Connection::super(), $tenant)]);
+    }
 }

@@ -61,6 +61,7 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
     <nav id="primary-nav" data-nav>
       <a href="<?= e(Url::path('/')) ?>">Request</a>
       <a href="<?= e(Url::path('/songs')) ?>">Catalog</a>
+      <a href="<?= e(Url::path('/events')) ?>">Events</a>
       <a href="<?= e(Url::path('/me')) ?>">My Spot</a>
       <a href="<?= e(Url::path('/admin/dashboard')) ?>">KJ</a>
       <a href="<?= e(Url::path('/display')) ?>">Display</a>

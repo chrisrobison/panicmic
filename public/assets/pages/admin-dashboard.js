@@ -151,6 +151,62 @@ async function loadContentFiles() {
   }
 }
 
+// Map of venue id -> default night name, so picking a venue can prefill
+// the night name input.
+const venueDefaults = new Map();
+
+async function loadStartVenues() {
+  const select = $('[data-session-venue]');
+  if (!select) return;
+  try {
+    const { venues = [] } = await api('/api/admin/venues');
+    const active = venues.filter(v => Number(v.is_active) === 1);
+    select.innerHTML = '<option value="">No venue</option>' + active.map(v =>
+      `<option value="${escapeHtml(String(v.id))}">${escapeHtml(v.name)}</option>`
+    ).join('');
+    venueDefaults.clear();
+    active.forEach(v => venueDefaults.set(String(v.id), v.default_night_name || ''));
+  } catch (_) { /* not authorized / no venues */ }
+}
+
+async function loadTonightEvents() {
+  const container = $('[data-tonight-events]');
+  if (!container) return;
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const { events = [] } = await api(`/api/admin/events?from=${today}&to=${today}`);
+    const startable = events.filter(e => e.status === 'scheduled' || e.status === 'live');
+    if (!startable.length) { container.hidden = true; return; }
+    const buttons = startable.map(e => {
+      const time = String(e.scheduled_for || '').slice(11, 16);
+      return `<button type="button" class="primary" data-start-event="${escapeHtml(String(e.id))}">▶ ${escapeHtml(e.name)} · ${escapeHtml(e.venue_name || '')} ${escapeHtml(time)}</button>`;
+    }).join('');
+    container.innerHTML = `<span class="muted">Tonight's schedule:</span> ${buttons}`;
+    container.hidden = false;
+  } catch (_) { container.hidden = true; }
+}
+
+async function loadBilling() {
+  const panel = $('[data-billing-panel]');
+  if (!panel) return;
+  try {
+    const { billing } = await api('/api/admin/billing');
+    const dollars = cents => `$${(Number(cents || 0) / 100).toFixed(2)}`;
+    panel.innerHTML = `
+      <h2>Plan &amp; usage</h2>
+      <ul class="billing-list">
+        <li><span>Plan</span><strong>${escapeHtml(billing.plan_name)} · ${dollars(billing.base_monthly_cents)}/mo</strong></li>
+        <li><span>Venues used</span><strong>${escapeHtml(String(billing.venues_used))} / ${escapeHtml(String(billing.max_venues))}</strong></li>
+        <li><span>KJ seats</span><strong>${escapeHtml(String(billing.kj_seats))} (${escapeHtml(String(billing.included_kj))} included)</strong></li>
+        <li><span>Additional KJ</span><strong>${escapeHtml(String(billing.additional_kj))} × ${dollars(billing.additional_kj_cents)}</strong></li>
+        <li class="billing-total"><span>Projected monthly</span><strong>${dollars(billing.projected_monthly_cents)}</strong></li>
+      </ul>
+      <p class="muted">Subscription status: ${escapeHtml(String(billing.subscription_status))}.</p>`;
+  } catch (error) {
+    panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
+  }
+}
+
 export function init() {
   // Login (admin-dashboard runs on /admin/login too — guard via form presence).
   $('[data-login-form]')?.addEventListener('submit', async event => {
@@ -231,13 +287,35 @@ export function init() {
     event.target.reset();
   });
 
-  // Session lifecycle.
+  // Picking a venue prefills the night name from its default.
+  $('[data-session-venue]')?.addEventListener('change', event => {
+    const nameInput = $('[data-session-start] input[name="name"]');
+    const def = venueDefaults.get(event.target.value);
+    if (nameInput && def && !nameInput.value.trim()) nameInput.value = def;
+  });
+
+  // Session lifecycle. Name is optional — the server falls back to the
+  // venue's default night name, then the account default.
   $('[data-session-start]')?.addEventListener('submit', async event => {
     event.preventDefault();
-    const name = formData(event.target).name?.trim() || '';
-    if (!name) return;
-    if (!confirm(`Start a new session "${name}"? The current session will be archived.`)) return;
-    await api('/api/admin/sessions/start', { method: 'POST', body: JSON.stringify({ name }) });
+    const data = formData(event.target);
+    const name = (data.name || '').trim();
+    const venueId = data.venue_id || '';
+    const label = name || 'a new night';
+    if (!confirm(`Start ${label}? The current session will be archived.`)) return;
+    await api('/api/admin/sessions/start', {
+      method: 'POST',
+      body: JSON.stringify({ name, venue_id: venueId || null }),
+    });
+    location.reload();
+  });
+
+  // Quick-start a scheduled event for tonight.
+  document.addEventListener('click', async event => {
+    const startEvent = event.target.closest('[data-start-event]');
+    if (!startEvent) return;
+    if (!confirm('Start this scheduled night? The current session will be archived.')) return;
+    await api(`/api/admin/events/${startEvent.dataset.startEvent}/start`, { method: 'POST', body: JSON.stringify({}) });
     location.reload();
   });
 
@@ -305,6 +383,11 @@ export function init() {
   loadSettings();
   loadBranding();
   loadContentFiles();
+  loadBilling();
+  if (appConfig.page === 'admin-dashboard') {
+    loadStartVenues();
+    loadTonightEvents();
+  }
   if (appConfig.page === 'admin-dashboard' || appConfig.page === 'admin-settings') {
     loadDisplayScreens().catch(() => {});
   }

@@ -13,6 +13,11 @@ $current = 'settings';
       </div>
     </header>
 
+    <section class="panel billing-panel" data-billing-panel>
+      <h2>Plan &amp; usage</h2>
+      <p class="muted">Loading…</p>
+    </section>
+
     <form class="panel settings-form" data-settings-form>
       <h2>Request behavior</h2>
       <div class="setting-row">

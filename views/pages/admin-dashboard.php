@@ -36,10 +36,17 @@ $dashboardQr = QrCode::svg($singerUrl, 120);
     <div class="toolbar session-controls">
       <span class="muted">Session: <strong><?= e($session['name']) ?></strong> (<?= e($session['status'] ?? 'active') ?>)</span>
       <form data-session-start class="inline">
-        <input name="name" placeholder="New session name" maxlength="180">
+        <select name="venue_id" data-session-venue>
+          <option value="">No venue</option>
+        </select>
+        <input name="name" placeholder="Night name" maxlength="180">
         <button>Start new</button>
       </form>
       <button data-session-end class="danger">End session</button>
+    </div>
+    <div class="toolbar tonight-events" data-tonight-events hidden>
+      <span class="muted">Tonight's schedule:</span>
+      <!-- quick-start buttons populated by JS from /api/admin/events -->
     </div>
     <form class="announcement" data-announcement-form>
       <input name="message" maxlength="500" placeholder="Announcement to display">

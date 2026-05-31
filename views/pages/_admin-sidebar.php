@@ -5,6 +5,8 @@ use PanicMic\Auth\Auth;
 $current = $current ?? '';
 $links = [
   ['key' => 'dashboard', 'href' => '/admin/dashboard', 'label' => 'Dashboard'],
+  ['key' => 'venues',    'href' => '/admin/venues',    'label' => 'Venues'],
+  ['key' => 'schedule',  'href' => '/admin/schedule',  'label' => 'Schedule'],
   ['key' => 'songs',     'href' => '/admin/songs',     'label' => 'Song catalog'],
   ['key' => 'content',   'href' => '/admin/content',   'label' => 'Content'],
   ['key' => 'settings',  'href' => '/admin/settings',  'label' => 'Settings'],

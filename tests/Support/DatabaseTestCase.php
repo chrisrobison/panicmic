@@ -50,7 +50,7 @@ abstract class DatabaseTestCase extends TestCase
     private function truncate(): void
     {
         // Tenant tables — order matters for FKs.
-        foreach (['queue_items', 'song_requests', 'announcements', 'singers', 'songs', 'audit_log', 'settings', 'payments_tips', 'display_screens', 'display_state', 'realtime_events', 'karaoke_sessions', 'users'] as $table) {
+        foreach (['queue_items', 'song_requests', 'announcements', 'singers', 'songs', 'audit_log', 'settings', 'payments_tips', 'display_screens', 'display_state', 'realtime_events', 'events', 'show_schedules', 'karaoke_sessions', 'venues', 'users'] as $table) {
             try {
                 $this->tenantDb->exec("DELETE FROM `{$table}`");
             } catch (\Throwable) {

@@ -10,13 +10,17 @@ use PanicMic\Http\BillingController;
 use PanicMic\Http\BrandingController;
 use PanicMic\Http\ContentController;
 use PanicMic\Http\DisplayController;
+use PanicMic\Http\EventController;
 use PanicMic\Http\PageRenderer;
+use PanicMic\Http\PublicEventsController;
 use PanicMic\Http\QueueController;
+use PanicMic\Http\ScheduleController;
 use PanicMic\Http\SessionController;
 use PanicMic\Http\SettingsController;
 use PanicMic\Http\SignupController;
 use PanicMic\Http\SongController;
 use PanicMic\Http\SuperController;
+use PanicMic\Http\VenueController;
 use PanicMic\Services\ContentService;
 use PanicMic\Services\DisplayService;
 use PanicMic\Services\QueueService;
@@ -160,7 +164,8 @@ try {
     // landing pages do a read-only lookup so the "closed for tonight"
     // banner can render instead of silently auto-starting a new session.
     $isPublicLanding = $method === 'GET'
-        && ($path === '/' || $path === '/display' || str_starts_with($path, '/request'));
+        && ($path === '/' || $path === '/display' || $path === '/events'
+            || str_starts_with($path, '/request') || str_starts_with($path, '/api/public'));
     $session = $isPublicLanding
         ? SessionService::latest($db, $tenant['night_name'])
         : SessionService::current($db, $tenant['night_name']);
@@ -214,10 +219,13 @@ try {
         $path === '/' && $method === 'GET' => PageRenderer::render('public', $tenant, $session),
         $path === '/songs' && $method === 'GET' => PageRenderer::render('songs', $tenant, $session),
         $path === '/me' && $method === 'GET' => PageRenderer::render('me', $tenant, $session),
+        $path === '/events' && $method === 'GET' => PageRenderer::render('public-events', $tenant, $session),
         $path === '/help' && $method === 'GET' => PageRenderer::render('help', $tenant, $session),
         $path === '/admin/login' && $method === 'GET' => PageRenderer::render('admin-login', $tenant, $session),
         in_array($path, ['/admin/dashboard', '/admin/queue', '/admin/singers', '/display/control'], true) && $method === 'GET' => PageRenderer::render('admin-dashboard', $tenant, $session),
         $path === '/admin/songs' && $method === 'GET' => PageRenderer::render('admin-songs', $tenant, $session),
+        $path === '/admin/venues' && $method === 'GET' => PageRenderer::render('admin-venues', $tenant, $session),
+        $path === '/admin/schedule' && $method === 'GET' => PageRenderer::render('admin-schedule', $tenant, $session),
         $path === '/admin/content' && $method === 'GET' => PageRenderer::render('admin-content', $tenant, $session),
         $path === '/admin/settings' && $method === 'GET' => PageRenderer::render('admin-settings', $tenant, $session),
         $path === '/admin/promote' && $method === 'GET' => PageRenderer::render('admin-promote', $tenant, $session),
@@ -258,6 +266,11 @@ try {
         $path === '/api/announcements' && $method === 'POST' => DisplayController::announce($db, $tenant, $session),
         $path === '/api/events' && $method === 'GET' => QueueController::events($db),
 
+        // ----- Public events / schedule (read-only, unauthenticated)
+        $path === '/api/public/schedule' && $method === 'GET' => PublicEventsController::upcoming($db),
+        $path === '/api/public/events/past' && $method === 'GET' => PublicEventsController::past($db),
+        (bool)preg_match('#^/api/public/events/(\d+)$#', $path, $m) && $method === 'GET' => PublicEventsController::setlist($db, (int)$m[1]),
+
         // ----- Auth + impersonation
         $path === '/api/admin/login' && $method === 'POST' => AuthController::tenantLogin($db),
         $path === '/api/admin/logout' && $method === 'POST' => AuthController::logoutTenant(),
@@ -267,6 +280,26 @@ try {
         // ----- Tenant admin API
         $path === '/api/admin/sessions/start' && $method === 'POST' => SessionController::start($db, $tenant, $session),
         $path === '/api/admin/sessions/end' && $method === 'POST' => SessionController::end($db, $tenant, $session),
+
+        // ----- Venues
+        $path === '/api/admin/venues' && $method === 'GET' => VenueController::index($db, $tenant, $session),
+        $path === '/api/admin/venues' && $method === 'POST' => VenueController::create($db, $tenant, $session),
+        (bool)preg_match('#^/api/admin/venues/(\d+)$#', $path, $m) && $method === 'PATCH' => VenueController::update($db, $tenant, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/venues/(\d+)$#', $path, $m) && $method === 'DELETE' => VenueController::delete($db, $tenant, $session, (int)$m[1]),
+
+        // ----- Recurring schedules
+        $path === '/api/admin/schedules' && $method === 'GET' => ScheduleController::index($db, $tenant, $session),
+        $path === '/api/admin/schedules' && $method === 'POST' => ScheduleController::create($db, $tenant, $session),
+        (bool)preg_match('#^/api/admin/schedules/(\d+)$#', $path, $m) && $method === 'PATCH' => ScheduleController::update($db, $tenant, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/schedules/(\d+)$#', $path, $m) && $method === 'DELETE' => ScheduleController::delete($db, $tenant, $session, (int)$m[1]),
+
+        // ----- Calendar events (one-off + materialized occurrences)
+        $path === '/api/admin/events' && $method === 'GET' => EventController::index($db, $tenant, $session),
+        $path === '/api/admin/events' && $method === 'POST' => EventController::create($db, $tenant, $session),
+        (bool)preg_match('#^/api/admin/events/(\d+)/start$#', $path, $m) && $method === 'POST' => EventController::start($db, $tenant, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/events/(\d+)$#', $path, $m) && $method === 'PATCH' => EventController::update($db, $tenant, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/events/(\d+)$#', $path, $m) && $method === 'DELETE' => EventController::cancel($db, $tenant, $session, (int)$m[1]),
+        $path === '/api/admin/billing' && $method === 'GET' => BillingController::summary($db, $tenant),
         $path === '/api/admin/settings' && $method === 'GET' => SettingsController::index($db),
         $path === '/api/admin/settings' && $method === 'POST' => SettingsController::update($db),
         $path === '/api/admin/branding' && $method === 'GET' => BrandingController::show($tenant),

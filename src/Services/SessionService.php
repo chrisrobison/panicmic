@@ -74,20 +74,28 @@ final class SessionService
 
     /**
      * Start a new session. Any other 'active' or 'paused' sessions are
-     * archived first so only one session is live at a time.
+     * archived first so only one session is live at a time (per account).
+     * Optionally tags the session with the venue + scheduled event it was
+     * started for; when an event is given it is flipped to 'live' and
+     * linked back to the new session.
      *
      * @return array<string,mixed>
      */
-    public static function start(PDO $db, string $name): array
+    public static function start(PDO $db, string $name, ?int $venueId = null, ?int $eventId = null): array
     {
         // Close any in-flight sessions before starting a new one.
         $db->exec("UPDATE karaoke_sessions SET status = 'closed', ends_at = COALESCE(ends_at, NOW()) WHERE status IN ('live','active','paused')");
 
-        $stmt = $db->prepare("INSERT INTO karaoke_sessions (name, starts_at, status) VALUES (?, NOW(), 'live')");
-        $stmt->execute([$name]);
+        $stmt = $db->prepare("INSERT INTO karaoke_sessions (name, venue_id, event_id, starts_at, status) VALUES (?, ?, ?, NOW(), 'live')");
+        $stmt->execute([$name, $venueId, $eventId]);
         $id = (int)$db->lastInsertId();
 
         $db->prepare("INSERT INTO display_state (session_id, mode) VALUES (?, 'idle')")->execute([$id]);
+
+        if ($eventId !== null) {
+            $db->prepare("UPDATE events SET status = 'live', session_id = ? WHERE id = ?")
+                ->execute([$id, $eventId]);
+        }
 
         $row = $db->prepare('SELECT * FROM karaoke_sessions WHERE id = ?');
         $row->execute([$id]);
@@ -108,6 +116,12 @@ final class SessionService
 
         $db->prepare(
             "UPDATE display_state SET mode = 'idle' WHERE session_id = ?"
+        )->execute([$sessionId]);
+
+        // Close the linked scheduled event, if any, so the calendar and
+        // public page reflect that the night has finished.
+        $db->prepare(
+            "UPDATE events SET status = 'closed' WHERE session_id = ? AND status IN ('scheduled','live')"
         )->execute([$sessionId]);
 
         try {

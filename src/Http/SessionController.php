@@ -10,6 +10,7 @@ use PanicMic\Services\DisplayService;
 use PanicMic\Services\EventBus;
 use PanicMic\Services\QueueService;
 use PanicMic\Services\SessionService;
+use PanicMic\Services\VenueService;
 use PanicMic\Support\Request;
 use PanicMic\Support\Response;
 use PDO;
@@ -20,11 +21,24 @@ final class SessionController
     public static function start(PDO $db, array $tenant, array $session): never
     {
         Auth::requireTenantRole('kj', 'tenant_admin');
-        $name = trim((string)(Request::input()['name'] ?? $tenant['night_name'] ?? 'Karaoke Night'));
+        $input = Request::input();
+        $venueId = !empty($input['venue_id']) ? (int)$input['venue_id'] : null;
+        $eventId = !empty($input['event_id']) ? (int)$input['event_id'] : null;
+
+        // Default the night name from the venue's default, then the
+        // account-level fallback.
+        $name = trim((string)($input['name'] ?? ''));
+        if ($name === '' && $venueId !== null) {
+            $venue = VenueService::find($db, $venueId);
+            $name = trim((string)($venue['default_night_name'] ?? ''));
+        }
+        if ($name === '') {
+            $name = trim((string)($tenant['night_name'] ?? 'Karaoke Night'));
+        }
         if ($name === '') {
             Response::json(['error' => 'Session name is required'], 400);
         }
-        $newSession = SessionService::start($db, $name);
+        $newSession = SessionService::start($db, $name, $venueId, $eventId);
         EventBus::publish($db, 'session:started', ['session' => $newSession]);
         Response::json(['session' => $newSession]);
     }
