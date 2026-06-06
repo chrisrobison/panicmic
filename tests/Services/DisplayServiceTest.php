@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace PanicMic\Tests\Services;
 
 use PanicMic\Services\DisplayService;
+use PanicMic\Services\QueueService;
+use PanicMic\Services\SongService;
 use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class DisplayServiceTest extends DatabaseTestCase
@@ -39,6 +41,33 @@ final class DisplayServiceTest extends DatabaseTestCase
         DisplayService::update($this->tenantDb, $this->sessionId, ['mode' => 'now_singing'], null);
         $state = DisplayService::state($this->tenantDb, $this->sessionId);
         self::assertSame('now_singing', $state['mode']);
+    }
+
+    public function testClearNowRequestResetsDisplayingScreensOnly(): void
+    {
+        $song = SongService::create($this->tenantDb, ['title' => 'Closing Time', 'artist' => 'Semisonic']);
+        $requestId = QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $song, 'display_name' => 'Sam'], 'tok-clear', false);
+
+        // "main" is showing the act; "lobby" is on an unrelated mode.
+        DisplayService::update($this->tenantDb, $this->sessionId, ['mode' => 'now_singing', 'now_request_id' => $requestId], null, 'main');
+        DisplayService::update($this->tenantDb, $this->sessionId, ['mode' => 'announcement'], null, 'lobby');
+
+        $cleared = DisplayService::clearNowRequest($this->tenantDb, $this->sessionId, $requestId);
+
+        self::assertSame(['main'], $cleared);
+        $main = DisplayService::state($this->tenantDb, $this->sessionId, 'main');
+        self::assertSame('idle', $main['mode']);
+        self::assertNull($main['now_request_id']);
+        // A screen that wasn't showing the act is left untouched.
+        self::assertSame('announcement', DisplayService::state($this->tenantDb, $this->sessionId, 'lobby')['mode']);
+    }
+
+    public function testClearNowRequestIsNoopWhenNothingDisplaysIt(): void
+    {
+        $song = SongService::create($this->tenantDb, ['title' => 'Untouched', 'artist' => 'Nobody']);
+        $requestId = QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $song, 'display_name' => 'Pat'], 'tok-noop', false);
+
+        self::assertSame([], DisplayService::clearNowRequest($this->tenantDb, $this->sessionId, $requestId));
     }
 
     public function testListScreensReturnsDefaultWhenNoneConfigured(): void

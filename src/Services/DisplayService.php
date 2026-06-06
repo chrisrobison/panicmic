@@ -81,6 +81,32 @@ final class DisplayService
     }
 
     /**
+     * When a request leaves the stage (completed / skipped / canceled),
+     * any screen still showing it as the "now singing" act must fall back
+     * to idle so the display and KJ console clear. Returns the screens
+     * that were showing this request so the caller can broadcast a state
+     * change for each; an empty array means nothing was displaying it.
+     *
+     * @return list<string>
+     */
+    public static function clearNowRequest(PDO $db, int $sessionId, int $requestId): array
+    {
+        $find = $db->prepare(
+            'SELECT screen FROM display_state WHERE session_id = ? AND now_request_id = ?'
+        );
+        $find->execute([$sessionId, $requestId]);
+        $screens = $find->fetchAll(PDO::FETCH_COLUMN);
+        if ($screens === []) {
+            return [];
+        }
+        $db->prepare(
+            "UPDATE display_state SET mode = 'idle', now_request_id = NULL
+             WHERE session_id = ? AND now_request_id = ?"
+        )->execute([$sessionId, $requestId]);
+        return array_map('strval', $screens);
+    }
+
+    /**
      * List all configured screens for the session. If none have been
      * configured yet, returns a default "main" entry so callers always
      * have something to render.

@@ -119,8 +119,9 @@ final class QueueController
     {
         Auth::requireTenantRole('kj', 'tenant_admin');
         $input = Request::input();
-        QueueService::setStatus($db, (int)$session['id'], $requestId, (string)($input['status'] ?? 'pending'));
-        if (($input['status'] ?? '') === 'now_singing') {
+        $status = (string)($input['status'] ?? 'pending');
+        QueueService::setStatus($db, (int)$session['id'], $requestId, $status);
+        if ($status === 'now_singing') {
             $screen = preg_replace('/[^a-z0-9_-]/i', '', (string)($input['screen'] ?? '')) ?: DisplayService::DEFAULT_SCREEN;
             DisplayService::update(
                 $db,
@@ -133,6 +134,15 @@ final class QueueController
                 'screen' => $screen,
                 'display' => DisplayService::state($db, (int)$session['id'], $screen),
             ]);
+        } elseif (in_array($status, ['completed', 'skipped', 'canceled'], true)) {
+            // The act left the stage — clear it from any screen still showing
+            // it so the "now singing" singer doesn't linger on the display.
+            foreach (DisplayService::clearNowRequest($db, (int)$session['id'], $requestId) as $screen) {
+                EventBus::publish($db, 'display:state_changed', [
+                    'screen' => $screen,
+                    'display' => DisplayService::state($db, (int)$session['id'], $screen),
+                ]);
+            }
         }
         EventBus::publish($db, 'request:status_changed', ['requestId' => $requestId, 'status' => $input['status'] ?? null]);
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
