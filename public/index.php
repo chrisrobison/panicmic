@@ -206,6 +206,9 @@ try {
         '/api/admin/branding', '/api/admin/settings',
         // Allow lapsed tenants to reactivate via the billing UI.
         '/api/billing/checkout', '/api/billing/plans',
+        // KJs must always be able to close an in-progress session even
+        // if the subscription has lapsed — don't strand a live show.
+        '/api/admin/sessions/end',
     ], true);
     if ($isMutation && !$isBillingExempt && !BillingService::hasAccess($tenant)) {
         Response::json([
@@ -274,6 +277,13 @@ try {
         // ----- Auth + impersonation
         $path === '/api/admin/login' && $method === 'POST' => AuthController::tenantLogin($db),
         $path === '/api/admin/logout' && $method === 'POST' => AuthController::logoutTenant(),
+        // GET logout for the nav link: clears both the tenant session and
+        // any super-admin impersonation, then returns to the login screen.
+        $path === '/admin/logout' && $method === 'GET' => (static function (): never {
+            unset($_SESSION['tenant_user'], $_SESSION['super_admin']);
+            Security::regenerateSession();
+            Response::redirect('/admin/login');
+        })(),
         $path === '/admin/end-impersonation' && $method === 'GET' => AuthController::endImpersonation(),
         $path === '/api/admin/end-impersonation' && $method === 'POST' => AuthController::endImpersonation(),
 
