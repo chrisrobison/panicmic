@@ -145,21 +145,22 @@ h1, h2, p { margin-top: 0; }
 
 .display .topbar { display: none; }
 .display-shell {
-  min-height: 100vh;
-  padding: 5vh 5vw;
+  height: 100dvh;
+  overflow: hidden;
+  padding: 3vh 4vw;
   background: radial-gradient(circle at top left, color-mix(in srgb, var(--primary) 22%, transparent), transparent 32%), var(--tenant-bg-image), var(--bg);
   background-size: cover;
   background-position: center;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 28px;
+  grid-template-rows: auto 1fr;
+  gap: 18px;
 }
 .display-brand { display: flex; justify-content: space-between; align-items: baseline; font-size: 32px; color: var(--muted); }
 .display-now { display: grid; place-items: center; text-align: center; font-size: clamp(44px, 8vw, 118px); font-weight: 900; line-height: .95; }
 .display-now small { display: block; color: var(--accent); font-size: .42em; margin-top: 18px; }
-.display-grid { display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 24px; align-items: start; }
-.display-grid > div { background: rgba(25,29,36,.74); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
-.display-player { position: relative; flex: 1; display: grid; place-items: center; background: #000; min-height: 60vh; border-radius: 8px; overflow: hidden; }
+.display-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 16px; align-items: stretch; min-height: 0; overflow: hidden; grid-row: 2; }
+.display-grid > div { background: rgba(25,29,36,.74); border: 1px solid var(--border); border-radius: 8px; padding: 18px; overflow-y: auto; min-height: 0; }
+.display-player { position: relative; display: grid; place-items: center; background: #000; min-height: 0; border-radius: 8px; overflow: hidden; grid-row: 2; }
 .display-player[hidden] { display: none; }
 .display-player-frame { width: 100%; height: 100%; aspect-ratio: 16 / 9; border: 0; }
 .display-player-empty { color: var(--text); text-align: center; padding: 32px; }
@@ -533,6 +534,8 @@ button.link.danger:hover { color: #fca5a5; }
 
   .hero { padding: 28px 16px; }
   .toolbar, .live-controls, .announcement, .admin-layout, .display-grid { grid-template-columns: 1fr; }
+  .display-shell { height: auto; min-height: 100svh; overflow: auto; }
+  .display-grid, .display-player { grid-row: unset; }
   .color-grid { grid-template-columns: 1fr 1fr; }
   .admin-layout aside { border-right: 0; border-bottom: 1px solid var(--border); grid-auto-flow: column; overflow-x: auto; }
   .queue-item { grid-template-columns: 1fr; }
@@ -640,3 +643,36 @@ button.link.danger:hover { color: #fca5a5; }
 @media (max-width: 720px) {
   .field-grid { grid-template-columns: 1fr; }
 }
+
+/* ----- Album art ----- */
+.album-art {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border-radius: 6px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.album-art--sm { width: 40px; height: 40px; border-radius: 5px; }
+.album-art--micro { width: 26px; height: 26px; border-radius: 4px; vertical-align: middle; margin-right: 6px; }
+.album-art--now {
+  display: block;
+  margin: 0 auto 16px;
+  width: clamp(120px, 22vw, 260px);
+  height: clamp(120px, 22vw, 260px);
+  border-radius: 12px;
+}
+
+/* Lay art beside the text in queue rows without breaking the 1fr/auto grid. */
+.queue-item-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.queue-item-main > div { min-width: 0; }
+
+/* Search result buttons become art + text rows. */
+.song-result { display: flex; align-items: center; gap: 12px; }
+.song-result-text { min-width: 0; }
+.song-result .badge { float: none; }
+
+/* Up-next line: art inline with the text. */
+[data-up-next] { display: flex; align-items: center; gap: 10px; justify-content: center; }
+[data-display-queue] > div { display: flex; align-items: center; }
