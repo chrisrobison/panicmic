@@ -23,6 +23,11 @@ export function init() {
       form.elements.song_id.value = '';
       form.elements.shared_song_id.value = '';
       $$('.song-result.selected').forEach(b => b.classList.remove('selected'));
+      // Clear search field and results so the form is ready for the next person.
+      const queryInput = $('[data-song-query]') || $('[name="song_search"]');
+      if (queryInput) queryInput.value = '';
+      const resultsEl = $('[data-song-results]');
+      if (resultsEl) resultsEl.innerHTML = '';
       await loadQueue();
     } catch (error) { setStatus(status, error.message); }
   });

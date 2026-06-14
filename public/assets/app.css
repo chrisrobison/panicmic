@@ -97,6 +97,16 @@ h1, h2, p { margin-top: 0; }
   gap: 32px;
   padding: 40px max(24px, 7vw);
 }
+/* When the hero contains the request form, constrain it to the viewport
+   so the whole form is visible without page-level scrolling. */
+.hero:has(.request-form) {
+  min-height: 0;
+  height: calc(100dvh - 68px);
+  align-items: start;
+  overflow-y: auto;
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -104,6 +114,20 @@ h1, h2, p { margin-top: 0; }
   padding: 22px;
 }
 .request-form, .login form, .song-editor, .tenant-create, .content-upload, .branding-form { display: grid; gap: 16px; }
+/* Request form specifically: flex column so the results area can grow + scroll
+   while every other field stays its natural size. */
+.request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+}
+.request-form .song-results {
+  flex: 1 1 auto;
+  min-height: 80px;
+  max-height: 300px;
+  overflow-y: auto;
+}
 .song-results, .queue-list, .queue-board, .song-grid, .tenant-list, .content-grid { display: grid; gap: 10px; }
 .song-result, .queue-item, .song-card, .tenant-card, .content-card {
   border: 1px solid var(--border);
@@ -533,6 +557,8 @@ button.link.danger:hover { color: #fca5a5; }
   .catalog-toolbar select { min-width: 120px; }
 
   .hero { padding: 28px 16px; }
+  .hero:has(.request-form) { height: calc(100dvh - 68px); padding: 12px 16px; }
+  .request-form .song-results { max-height: 220px; }
   .toolbar, .live-controls, .announcement, .admin-layout, .display-grid { grid-template-columns: 1fr; }
   .display-shell { height: auto; min-height: 100svh; overflow: auto; }
   .display-grid, .display-player { grid-row: unset; }
