@@ -6,6 +6,17 @@ namespace PanicMic\Support;
 
 final class Security
 {
+    /**
+     * Test seam for session-id rotation. When set, {@see regenerateSession}
+     * calls this instead of PHP's session_regenerate_id(). The CLI test
+     * process never has an active session, so this lets the auth tests
+     * observe that login actually rotates the id. Mirrors the Auth::useDb
+     * seam pattern.
+     *
+     * @var (callable():void)|null
+     */
+    private static $sessionRotator = null;
+
     public static function startSession(): void
     {
         $secure = (Env::get('APP_ENV') === 'production');
@@ -52,6 +63,33 @@ final class Security
             $nonce = base64_encode(random_bytes(16));
         }
         return $nonce;
+    }
+
+    /**
+     * Rotate the session id at a privilege boundary (login / impersonation)
+     * to defend against session fixation: an attacker who plants a known
+     * session id on the victim before login can't ride it afterward.
+     *
+     * session_regenerate_id(true) preserves $_SESSION data (CSRF token,
+     * rate-limit buckets) while issuing a fresh id and dropping the old one.
+     * Guarded so it's a safe no-op when there is no active session (CLI,
+     * tests, webhook routes that never start one).
+     */
+    public static function regenerateSession(): void
+    {
+        if (self::$sessionRotator !== null) {
+            (self::$sessionRotator)();
+            return;
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+    }
+
+    /** Test seam — observe/override session-id rotation. Pass null to reset. */
+    public static function setSessionRotator(?callable $rotator): void
+    {
+        self::$sessionRotator = $rotator;
     }
 
     public static function csrfToken(): string
@@ -150,5 +188,16 @@ final class Security
     {
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         return 'login:' . $ip . ':' . strtolower(trim($email));
+    }
+
+    /**
+     * Per-IP bucket for the self-serve signup endpoint. Keyed on IP only
+     * (no email/subdomain) so the limit throttles account-creation abuse
+     * and subdomain enumeration regardless of which values are probed.
+     */
+    public static function signupBucket(?string $ip = null): string
+    {
+        $ip ??= ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        return 'signup:' . $ip;
     }
 }

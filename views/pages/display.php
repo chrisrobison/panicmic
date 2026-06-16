@@ -8,44 +8,67 @@ $screenId = preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) 
 $requestQr = QrCode::svg($requestUrl, 320);
 ?>
 <section class="display-shell" data-screen="<?= e($screenId) ?>">
-  <div class="display-brand">
-    <strong><?= e($tenant['venue_name']) ?></strong>
-    <span><?= e($tenant['night_name']) ?> · <span data-screen-label><?= e($screenId) ?></span></span>
-  </div>
 
-  <!-- Player layer: visible only when mode === 'now_singing'. -->
-  <div class="display-player" data-display-player hidden>
-    <div data-display-yt class="display-player-frame" hidden></div>
-    <video data-display-video class="display-player-frame" playsinline muted hidden></video>
-    <div data-display-player-empty class="display-player-empty" hidden>
-      <h2 data-display-player-title></h2>
-      <p>This song doesn't have an embedded video. Cue the source on the operator console.</p>
-    </div>
-    <div class="display-lower-third" data-display-lower-third hidden>
-      <strong data-display-lt-singer></strong>
-      <span data-display-lt-song></span>
-    </div>
-  </div>
+  <!-- Stage: left area (video + overlays) -->
+  <div class="display-stage">
 
-  <!-- Grid layer: visible for idle / queue / clean_stage / announcement modes. -->
-  <div class="display-grid" data-display-grid>
-    <div class="display-now" data-display-now>
-      <span>Ready for requests</span>
+    <!-- Now Playing bar (top overlay) -->
+    <div class="display-now-bar">
+      <span class="display-now-label">NOW PLAYING</span>
+      <div class="display-now-info">
+        <strong data-display-now-title>Ready for requests</strong>
+        <span data-display-now-singer></span>
+      </div>
     </div>
-    <div>
-      <h2>Up Next</h2>
-      <div data-up-next></div>
+
+    <!-- Viewport: player, idle overlay, and lower-third stacked -->
+    <div class="display-viewport">
+
+      <!-- Video player (shown when mode === now_singing) -->
+      <div class="display-player" data-display-player hidden>
+        <div data-display-yt class="display-player-frame" hidden></div>
+        <video data-display-video class="display-player-frame" playsinline muted hidden></video>
+        <div data-display-player-empty class="display-player-empty" hidden>
+          <h2 data-display-player-title></h2>
+          <p>This song doesn't have an embedded video. Cue the source on the operator console.</p>
+        </div>
+      </div>
+
+      <!-- Idle overlay (shown when no active singer) -->
+      <div class="display-idle" data-display-idle>
+        <span>Ready for requests</span>
+      </div>
+
+      <!-- Lower third: singer name + song while playing -->
+      <div class="display-lower-third" data-display-lower-third hidden>
+        <strong data-display-lt-singer></strong>
+        <span data-display-lt-song></span>
+      </div>
+
+    </div><!-- /.display-viewport -->
+  </div><!-- /.display-stage -->
+
+  <!-- Sidebar: right area (singer queue + QR) -->
+  <aside class="display-sidebar">
+
+    <div class="display-sidebar-header">
+      <span class="display-sidebar-title">SINGER QUEUE</span>
+      <span class="display-sidebar-venue"><?= e($tenant['venue_name']) ?></span>
     </div>
-    <div>
-      <h2>Queue</h2>
-      <div data-display-queue></div>
-    </div>
-    <div class="qr">
-      <h2>Request Songs</h2>
+
+    <div class="display-upnext-label">UP NEXT</div>
+
+    <div class="display-sidebar-queue" data-display-queue></div>
+
+    <div class="display-wait-box" data-display-wait hidden></div>
+
+    <div class="display-qr-box">
+      <span class="display-qr-label">SCAN TO ADD YOUR SONG</span>
       <div data-qr><?= $requestQr ?></div>
-      <p><?= e($requestUrl) ?></p>
+      <p class="display-qr-url"><?= e($requestUrl) ?></p>
     </div>
-  </div>
+
+  </aside><!-- /.display-sidebar -->
 
   <div class="display-announcement" data-display-announcement hidden></div>
 </section>

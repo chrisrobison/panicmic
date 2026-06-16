@@ -15,6 +15,12 @@ final class SecurityTest extends TestCase
         $_SESSION = [];
     }
 
+    protected function tearDown(): void
+    {
+        // Don't let a test seam leak into other test files.
+        Security::setSessionRotator(null);
+    }
+
     public function testCsrfTokenIsStableWithinSession(): void
     {
         $first = Security::csrfToken();
@@ -66,5 +72,47 @@ final class SecurityTest extends TestCase
         // shouldn't short-circuit on early bytes. We can't directly
         // assert timing here, but we can assert false for similar-prefix.
         self::assertFalse(Security::csrfTokenMatches(substr($token, 0, -1) . 'x'));
+    }
+
+    /* ------- regenerateSession: session-fixation defense ------- */
+
+    public function testRegenerateSessionIsNoOpWithoutActiveSession(): void
+    {
+        // The CLI test process never has an active session, so the guarded
+        // call must be a harmless no-op and must NOT discard session data
+        // (CSRF token, rate-limit buckets ride through a real rotation).
+        $_SESSION['keep'] = 'me';
+        Security::regenerateSession();
+        self::assertSame('me', $_SESSION['keep']);
+    }
+
+    public function testRegenerateSessionUsesRotatorSeam(): void
+    {
+        $calls = 0;
+        Security::setSessionRotator(static function () use (&$calls): void {
+            $calls++;
+        });
+        Security::regenerateSession();
+        Security::regenerateSession();
+        self::assertSame(2, $calls);
+    }
+
+    /* ------- signupBucket: per-IP throttle key ------- */
+
+    public function testSignupBucketUsesProvidedIp(): void
+    {
+        self::assertSame('signup:203.0.113.9', Security::signupBucket('203.0.113.9'));
+    }
+
+    public function testSignupBucketFallsBackToRemoteAddr(): void
+    {
+        $_SERVER['REMOTE_ADDR'] = '198.51.100.4';
+        self::assertSame('signup:198.51.100.4', Security::signupBucket());
+    }
+
+    public function testSignupBucketDefaultsToUnknownWhenNoIp(): void
+    {
+        unset($_SERVER['REMOTE_ADDR']);
+        self::assertSame('signup:unknown', Security::signupBucket());
     }
 }

@@ -8,6 +8,7 @@ use PanicMic\Auth\Auth;
 use PanicMic\Database\Connection;
 use PanicMic\Services\BillingService;
 use PanicMic\Services\ContentService;
+use PanicMic\Services\LastfmService;
 use PanicMic\Services\SharedCatalogService;
 use PanicMic\Support\Impersonation;
 use PanicMic\Support\Request;
@@ -98,6 +99,9 @@ final class SuperController
         if ($path === '/api/super/catalog/import' && $method === 'POST') {
             self::importSharedCatalog($db);
         }
+        if ($path === '/api/super/catalog/enrich' && $method === 'POST') {
+            self::enrichSharedCatalog($db);
+        }
         if ($path === '/api/super/catalog/export' && $method === 'GET') {
             self::exportSharedCatalog($db);
         }
@@ -149,6 +153,8 @@ final class SuperController
             Response::json(['error' => 'Invalid credentials'], 401);
         }
         Security::rateLimitDbClear($db, $bucket);
+        // Rotate the session id at the privilege boundary before elevating.
+        Security::regenerateSession();
         $_SESSION['super_admin'] = ['id' => (int)$user['id'], 'email' => $user['email'], 'display_name' => $user['display_name']];
         Response::json(['user' => $_SESSION['super_admin']]);
     }
@@ -252,6 +258,41 @@ final class SuperController
         }
         $destination = $scheme . '://' . $row['domain'] . $port . Url::path('/admin/dashboard') . '?super_token=' . urlencode($token);
         Response::json(['url' => $destination, 'expires_in' => 300]);
+    }
+
+    /**
+     * Enrich a bounded batch of un-enriched shared songs from Last.fm.
+     * The CLI script (scripts/enrich-lastfm.php) is the bulk path; this
+     * lets a super-admin top up from the catalog UI without shell access.
+     */
+    private static function enrichSharedCatalog(PDO $superDb): never
+    {
+        @set_time_limit(0);
+        if (!LastfmService::isEnabled()) {
+            Response::json(['error' => 'Last.fm is not configured (LASTFM_API_KEY is empty).'], 400);
+        }
+        $batch = max(1, min(100, (int)(Request::input()['limit'] ?? 25)));
+        $rows = $superDb->query(
+            "SELECT id, title, artist FROM shared_songs
+             WHERE is_active = 1 AND lastfm_enriched_at IS NULL
+             ORDER BY id ASC LIMIT {$batch}"
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $processed = 0;
+        $withArt = 0;
+        foreach ($rows as $row) {
+            $info = LastfmService::trackInfo((string)$row['artist'], (string)$row['title']);
+            SharedCatalogService::applyLastfm($superDb, (int)$row['id'], $info ?? []);
+            if (!empty($info['album_art_url'])) {
+                $withArt++;
+            }
+            $processed++;
+            usleep(200000); // ~5 req/s
+        }
+        $remaining = (int)$superDb->query(
+            'SELECT COUNT(*) FROM shared_songs WHERE is_active = 1 AND lastfm_enriched_at IS NULL'
+        )->fetchColumn();
+        Response::json(['processed' => $processed, 'with_art' => $withArt, 'remaining' => $remaining]);
     }
 
     private static function importSharedCatalog(PDO $superDb): never

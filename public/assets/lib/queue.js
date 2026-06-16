@@ -13,6 +13,7 @@
 
 import { $, $$, escapeHtml } from './dom.js';
 import { api, appConfig } from './api.js';
+import { coverMarkup } from './albumArt.js';
 
 const displayPlayer = {
   currentVideoId: null,
@@ -62,7 +63,10 @@ export function renderPublicQueue(queue) {
   $$('[data-public-queue]').forEach(container => {
     container.innerHTML = queue.filter(item => !['completed', 'skipped', 'canceled'].includes(item.queue_status)).map((item, index) => `
       <div class="queue-item status-${escapeHtml(item.queue_status)}">
-        <div><strong>${index + 1}. ${escapeHtml(item.singer_name)}</strong><br>${escapeHtml(item.title)} - ${escapeHtml(item.artist)}</div>
+        <div class="queue-item-main">
+          ${coverMarkup(item)}
+          <div><strong>${index + 1}. ${escapeHtml(item.singer_name)}</strong><br>${escapeHtml(item.title)} - ${escapeHtml(item.artist)}</div>
+        </div>
         <span>${escapeHtml(item.queue_status.replace('_', ' '))}</span>
       </div>
     `).join('') || '<p>No singers in queue yet.</p>';
@@ -93,10 +97,13 @@ export function renderAdminQueue(queue) {
   if (!container) return;
   container.innerHTML = queue.map(item => `
     <article class="queue-item status-${escapeHtml(item.queue_status)}" draggable="true" data-request-id="${item.request_id}">
-      <div>
-        <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
-        <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
-        ${renderQueueItemSource(item)}
+      <div class="queue-item-main">
+        ${coverMarkup(item)}
+        <div>
+          <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
+          <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
+          ${renderQueueItemSource(item)}
+        </div>
       </div>
       <div class="queue-actions">
         ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
@@ -124,45 +131,94 @@ export function renderAdminStats(queue) {
   }
 }
 
-export function renderDisplay(queue, display = {}) {
-  const now = $('[data-display-now]');
-  if (!now) return;
-  const current = queue.find(item => item.request_id === display.now_request_id) || queue.find(item => item.queue_status === 'now_singing');
-  const next = queue.find(item => item.queue_status === 'up_next') || queue.find(item => item.queue_status === 'pending');
+/** Return up-to-two uppercase initials from a singer's display name. */
+function singerInitials(name) {
+  const parts = (name || '').trim().split(/\s+/);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+}
 
-  if (current) {
-    now.innerHTML = `<strong>${escapeHtml(current.singer_name)}</strong><br>${escapeHtml(current.title)} - ${escapeHtml(current.artist)}`;
-  } else {
-    now.innerHTML = '<span>Ready for requests</span>';
-  }
-  const upNextEl = $('[data-up-next]');
-  if (upNextEl) {
-    upNextEl.innerHTML = next ? `<strong>${escapeHtml(next.singer_name)}</strong> — ${escapeHtml(next.title)}` : 'No singers queued yet.';
-  }
+/** Stable hue (0–359) derived from the singer's name for avatar colour. */
+function singerHue(name) {
+  let h = 0;
+  for (const c of (name || '')) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return h % 360;
+}
+
+export function renderDisplay(queue, display = {}) {
+  // Only runs on the display page — bail if sidebar queue container is absent.
   const dq = $('[data-display-queue]');
-  if (dq) {
-    dq.innerHTML = queue.filter(item => !['completed', 'skipped', 'canceled'].includes(item.queue_status)).slice(0, 8).map((item, index) => `<div><span>${index + 1}.</span> ${escapeHtml(item.singer_name)} — ${escapeHtml(item.title)}</div>`).join('') || '<p>Queue is empty.</p>';
+  if (!dq) return;
+
+  const current = queue.find(item => item.request_id === display.now_request_id) || queue.find(item => item.queue_status === 'now_singing');
+
+  // Update the "Now Playing" bar at the top of the stage.
+  const nowTitle = $('[data-display-now-title]');
+  const nowSinger = $('[data-display-now-singer]');
+  if (nowTitle) nowTitle.textContent = current ? `${current.title} — ${current.artist}` : 'Ready for requests';
+  if (nowSinger) nowSinger.textContent = current ? current.singer_name : '';
+
+  // Build rich singer-queue rows in the sidebar.
+  const AVG_MIN = 5;
+  const activeQueue = queue.filter(item => !['completed', 'skipped', 'canceled'].includes(item.queue_status));
+
+  if (!activeQueue.length) {
+    dq.innerHTML = '<p class="display-queue-empty">No singers in queue yet.</p>';
+  } else {
+    dq.innerHTML = activeQueue.slice(0, 10).map((item, idx) => {
+      const isOnStage = item.queue_status === 'now_singing';
+      const initials = singerInitials(item.singer_name);
+      const hue = singerHue(item.singer_name);
+      const posNum = idx + 1;
+      const waitMin = isOnStage ? null : idx * AVG_MIN;
+
+      return `<div class="display-singer-row">
+        <div class="display-singer-avatar" style="background:hsl(${hue},50%,36%)">${escapeHtml(initials)}</div>
+        <div class="display-singer-name">${escapeHtml(item.singer_name)}${isOnStage ? '<span class="display-badge-onstage">ON STAGE</span>' : ''}</div>
+        <div class="display-singer-song">${escapeHtml(item.title)}</div>
+        <div class="display-singer-meta">
+          ${waitMin !== null ? `<span class="display-singer-wait">~${waitMin} min</span>` : ''}
+          ${!isOnStage ? `<span class="display-singer-pos">#${posNum}</span>` : ''}
+        </div>
+      </div>`;
+    }).join('');
   }
-  const qr = $('[data-qr]');
-  if (qr && !qr.innerHTML.trim()) qr.innerHTML = qrSvg('Scan for requests');
+
+  // Total wait info box.
+  const waitEl = $('[data-display-wait]');
+  if (waitEl) {
+    const totalWait = activeQueue.length * AVG_MIN;
+    if (activeQueue.length >= 2) {
+      waitEl.hidden = false;
+      waitEl.innerHTML = `
+        <div class="display-wait-total">
+          <strong>Total wait to join now:</strong>
+          <span class="display-wait-value">~${totalWait} min</span>
+        </div>
+        <div>${activeQueue.length} singer${activeQueue.length !== 1 ? 's' : ''} in queue &middot; ~${AVG_MIN} min avg song</div>
+      `;
+    } else {
+      waitEl.hidden = true;
+    }
+  }
+
   syncDisplayPlayer(current, display);
 }
 
 function syncDisplayPlayer(current, display = {}) {
   const playerRoot = $('[data-display-player]');
-  const grid = $('[data-display-grid]');
-  if (!playerRoot || !grid) return;
+  const idleEl = $('[data-display-idle]');
+  if (!playerRoot) return;
 
   const playMode = display.mode === 'now_singing';
   playerRoot.hidden = !playMode;
-  grid.hidden = playMode;
+  if (idleEl) idleEl.hidden = playMode;
 
   if (!playMode) {
     stopDisplayPlayer();
     return;
   }
 
-  const lt = $('[data-display-lower-third]', playerRoot);
+  const lt = $('[data-display-lower-third]');
   if (lt) {
     lt.hidden = !current;
     if (current) {

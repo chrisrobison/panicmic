@@ -46,12 +46,6 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   </style>
 </head>
 <body class="<?= e($page) ?><?= $actingAsSuper ? ' acting-as-super' : '' ?>">
-  <?php if ($actingAsSuper && $page !== 'super-login'): ?>
-    <div class="super-banner">
-      <span><strong>Super-admin mode.</strong> Acting on <?= e($tenant['venue_name']) ?>.</span>
-      <a href="<?= e(Url::path('/admin/end-impersonation')) ?>">Exit</a>
-    </div>
-  <?php endif; ?>
   <header class="topbar">
     <a class="brand" href="<?= e(Url::path('/')) ?>">
       <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt=""><?php endif; ?>
@@ -68,12 +62,16 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
       <a href="<?= e(Url::path('/admin/dashboard')) ?>">KJ</a>
       <a href="<?= e(Url::path('/display')) ?>">Display</a>
       <a href="<?= e(Url::path($isAdminPage ? '/admin/help' : '/help')) ?>" data-help-modal>Help</a>
+      <?php if ($actingAsSuper || !empty($_SESSION['tenant_user'])): ?>
+        <a href="<?= e(Url::path('/admin/logout')) ?>" class="nav-logout">Logout</a>
+      <?php endif; ?>
     </nav>
     <?php if ($profileImageUrl): ?><img class="profile-pic" src="<?= e($profileImageUrl) ?>" alt=""><?php endif; ?>
   </header>
   <main data-page="<?= e($page) ?>">
     <?php require __DIR__ . "/pages/{$page}.php"; ?>
   </main>
+  <script src="<?= e(Url::path('/assets/vendor/geopattern.min.js')) ?>"></script>
   <script type="module" src="<?= e(Url::path('/assets/main.js')) ?>"></script>
 </body>
 </html>

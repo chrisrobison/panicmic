@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PanicMic\Auth;
 
 use PanicMic\Support\Response;
+use PanicMic\Support\Security;
 use PDO;
 
 final class Auth
@@ -140,6 +141,8 @@ final class Auth
         if (!$user || !password_verify($password, $user['password_hash'] ?? '')) {
             return null;
         }
+        // Rotate the session id at the privilege boundary before elevating.
+        Security::regenerateSession();
         $_SESSION['tenant_user'] = ['id' => (int)$user['id'], 'email' => $user['email'], 'display_name' => $user['display_name'], 'role' => $user['role']];
         return $_SESSION['tenant_user'];
     }
@@ -162,6 +165,8 @@ final class Auth
         if (!$admin || !password_verify($password, $admin['password_hash'] ?? '')) {
             return null;
         }
+        // Rotate the session id at the privilege boundary before elevating.
+        Security::regenerateSession();
         $_SESSION['super_admin'] = [
             'id' => (int)$admin['id'],
             'email' => $admin['email'],

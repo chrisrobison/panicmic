@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace PanicMic\Tests\Auth;
 
 use PanicMic\Auth\Auth;
+use PanicMic\Support\Security;
 use PanicMic\Tests\Support\DatabaseTestCase;
 
 final class AuthTest extends DatabaseTestCase
@@ -13,7 +14,13 @@ final class AuthTest extends DatabaseTestCase
     {
         parent::setUp();
         Auth::resetActiveMemo();
+        Security::setSessionRotator(null);
         $_SESSION = [];
+    }
+
+    protected function tearDown(): void
+    {
+        Security::setSessionRotator(null);
     }
 
     public function testEnsureSessionUserActiveNoOpsWhenNoSession(): void
@@ -92,6 +99,63 @@ final class AuthTest extends DatabaseTestCase
 
         self::assertNull(Auth::attemptSuperForTenant($this->superDb, 'boss2@x', 'wrong'));
         self::assertArrayNotHasKey('super_admin', $_SESSION);
+    }
+
+    /* ------- session rotation on login: fixation defense ------- */
+
+    public function testAttemptTenantRotatesSessionIdBeforeElevating(): void
+    {
+        $hash = password_hash('right', PASSWORD_DEFAULT);
+        $this->tenantDb
+            ->prepare("INSERT INTO users (email, password_hash, display_name, role, is_active) VALUES (?, ?, ?, 'kj', 1)")
+            ->execute(['rot@x', $hash, 'Rot']);
+
+        $rotated = false;
+        Security::setSessionRotator(function () use (&$rotated): void {
+            $rotated = true;
+            // The id must rotate BEFORE the session is elevated, so an
+            // attacker's planted pre-auth id never becomes an authed one.
+            self::assertArrayNotHasKey('tenant_user', $_SESSION);
+        });
+
+        $user = Auth::attemptTenant($this->tenantDb, 'rot@x', 'right');
+        self::assertNotNull($user);
+        self::assertTrue($rotated, 'successful tenant login must rotate the session id');
+        self::assertArrayHasKey('tenant_user', $_SESSION);
+    }
+
+    public function testFailedTenantLoginDoesNotRotateSession(): void
+    {
+        $hash = password_hash('right', PASSWORD_DEFAULT);
+        $this->tenantDb
+            ->prepare("INSERT INTO users (email, password_hash, display_name, role, is_active) VALUES (?, ?, ?, 'kj', 1)")
+            ->execute(['rot2@x', $hash, 'Rot']);
+
+        $rotated = false;
+        Security::setSessionRotator(function () use (&$rotated): void {
+            $rotated = true;
+        });
+
+        self::assertNull(Auth::attemptTenant($this->tenantDb, 'rot2@x', 'wrong'));
+        self::assertFalse($rotated, 'a failed login must not rotate the session id');
+    }
+
+    public function testAttemptSuperForTenantRotatesSession(): void
+    {
+        $hash = password_hash('superpw', PASSWORD_DEFAULT);
+        $this->superDb
+            ->prepare('INSERT INTO super_admin_users (email, password_hash, display_name) VALUES (?, ?, ?)')
+            ->execute(['rotboss@x', $hash, 'Boss']);
+
+        $rotated = false;
+        Security::setSessionRotator(function () use (&$rotated): void {
+            $rotated = true;
+            self::assertArrayNotHasKey('super_admin', $_SESSION);
+        });
+
+        $actor = Auth::attemptSuperForTenant($this->superDb, 'rotboss@x', 'superpw');
+        self::assertNotNull($actor);
+        self::assertTrue($rotated, 'successful super login must rotate the session id');
     }
 
     /* ------- userHasRole: predicate behind requireTenantRole ------- */

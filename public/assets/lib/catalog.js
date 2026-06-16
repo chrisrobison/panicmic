@@ -5,6 +5,7 @@
 
 import { $, escapeHtml } from './dom.js';
 import { api, appConfig } from './api.js';
+import { coverMarkup } from './albumArt.js';
 
 const state = { page: 1, size: 50, total: 0, lastFilters: {} };
 
@@ -78,9 +79,12 @@ function publicSongButton(song) {
             data-song-source="${escapeHtml(song.source || 'local')}"
             data-song-id="${escapeHtml(song.id)}"
             data-song-label="${escapeHtml(song.title)} - ${escapeHtml(song.artist)}">
-      <strong>${escapeHtml(song.title)}</strong> ${badge}<br>
-      <span>${escapeHtml(song.artist)}</span>
-      ${link ? `<small>${escapeHtml(song.video_provider || 'video')} available</small>` : ''}
+      ${coverMarkup(song, 'album-art album-art--sm')}
+      <span class="song-result-text">
+        <strong>${escapeHtml(song.title)}</strong> ${badge}<br>
+        <span>${escapeHtml(song.artist)}</span>
+        ${link ? `<small>${escapeHtml(song.video_provider || 'video')} available</small>` : ''}
+      </span>
     </button>
   `;
 }
@@ -98,6 +102,8 @@ function adminSongCard(song) {
       <div class="song-editor-grid">
         <label>Title<input name="title" value="${escapeHtml(song.title)}" required></label>
         <label>Artist<input name="artist" value="${escapeHtml(song.artist)}" required></label>
+        <label>Album<input name="album" value="${escapeHtml(song.album || '')}"></label>
+        <label>Album art URL<input name="album_art_url" value="${escapeHtml(song.album_art_url || '')}" placeholder="https://… or /files/…"></label>
         <label>Genre<input name="genre" value="${escapeHtml(song.genre || '')}"></label>
         <label>Decade<input name="decade" type="number" min="1900" max="2090" step="10" value="${escapeHtml(song.decade || '')}"></label>
         <label>Popularity<input name="popularity" type="number" min="0" value="${escapeHtml(song.popularity || 0)}"></label>
