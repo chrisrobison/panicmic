@@ -4,9 +4,14 @@ import { $, $$, setStatus, formData, escapeHtml } from '../lib/dom.js';
 import { api, url, appConfig } from '../lib/api.js';
 import { loadQueue } from '../lib/queue.js';
 import { startEvents } from '../lib/events.js';
+import { startRealtime, onMessage } from '../lib/ws.js';
 import { broadcast, broadcastDisplayCommand } from '../lib/broadcast.js';
 
 const displayWindows = new Map();
+
+// Per-screen display presence, keyed by screen id. Populated from WS
+// display:ready / display:status messages when the daemon is running.
+const displayPresence = new Map();
 
 async function loadDisplayScreens() {
   try {
@@ -93,8 +98,42 @@ async function cueAndPlayAll() {
       });
     } catch (_) { /* keep mirroring */ }
   }
-  // Step 2: fan out instant cue to local display windows.
-  broadcastDisplayCommand({ screen: 'all', action: 'cue', payload: { requestId: next.request_id } });
+  // Step 2: trigger a WebSocket-synchronized play. The REST endpoint
+  // publishes display:cue + display:play_at on the EventBus; the WS daemon
+  // pushes them to displays. When the daemon isn't running, displays still
+  // pick the events up over short-poll. Fall back to a local broadcast cue
+  // if the endpoint itself errors.
+  try {
+    await api('/api/display/play', {
+      method: 'POST',
+      body: JSON.stringify({ screen: 'all', request_id: next.request_id, start_delay_ms: 2000, offset_seconds: 0 }),
+    });
+  } catch (_) {
+    broadcastDisplayCommand({ screen: 'all', action: 'cue', payload: { requestId: next.request_id } });
+  }
+}
+
+function updatePresencePanel() {
+  const panel = document.querySelector('[data-ws-presence]');
+  if (!panel) return;
+  const now = Date.now();
+  const rows = [...displayPresence.entries()]
+    .filter(([, info]) => now - info.lastSeen < 15000)
+    .map(([screen, info]) => `<span class="ws-screen">${escapeHtml(screen)}: ${escapeHtml(info.playerState || 'ready')}</span>`);
+  panel.innerHTML = rows.length ? rows.join(' ') : '<span class="muted">No displays connected.</span>';
+}
+
+function trackDisplayPresence(msg) {
+  if (!msg || !msg.type) return;
+  if (msg.type === 'display:ready' || msg.type === 'display:status') {
+    const screen = msg.screen || 'main';
+    displayPresence.set(screen, {
+      lastSeen: Date.now(),
+      playerState: msg.playerState || (msg.type === 'display:ready' ? 'ready' : ''),
+      requestId: msg.requestId ?? null,
+    });
+    updatePresencePanel();
+  }
 }
 
 async function loadSettings() {
@@ -391,5 +430,16 @@ export function init() {
   if (appConfig.page === 'admin-dashboard' || appConfig.page === 'admin-settings') {
     loadDisplayScreens().catch(() => {});
   }
-  startEvents(() => loadQueue().catch(() => {}));
+
+  // Realtime: prefers the WS daemon (role=kj), falls back to short-poll.
+  startRealtime(() => loadQueue().catch(() => {}));
+  // Track display presence from WS status messages.
+  onMessage(trackDisplayPresence);
+  // Age out stale presence entries even when no new messages arrive.
+  setInterval(updatePresencePanel, 5000);
 }
+
+// startEvents stays imported as the short-poll primitive that ws.js
+// delegates to; referencing it here keeps linters from flagging it unused
+// while documenting that the fallback path is still wired in.
+void startEvents;

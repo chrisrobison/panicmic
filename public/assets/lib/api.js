@@ -10,6 +10,8 @@ export const appConfig = {
   tenantSlug: document.querySelector('meta[name="app-tenant-slug"]')?.content || '',
   sessionId: document.querySelector('meta[name="app-session-id"]')?.content || '',
   screen: new URLSearchParams(location.search).get('screen') || 'main',
+  wsEnabled: (document.querySelector('meta[name="app-ws-enabled"]')?.content || '1') === '1',
+  wsPath: document.querySelector('meta[name="app-ws-path"]')?.content || '/ws',
 };
 
 const basePath = appConfig.basePath.replace(/\/$/, '');

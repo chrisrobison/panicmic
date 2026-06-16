@@ -6,12 +6,19 @@ namespace PanicMic\Http;
 
 use PanicMic\Support\Security;
 use PanicMic\Support\Url;
+use PanicMic\Support\WsManager;
 
 final class PageRenderer
 {
     /** @param array<string,mixed> $tenant @param array<string,mixed> $session */
     public static function render(string $page, array $tenant, array $session): never
     {
+        // Start the WebSocket daemon on-demand the first time any page is
+        // rendered. The daemon self-exits when idle, so this is the only
+        // management needed — no cron, no systemd unit. The call is a no-op
+        // when WEBSOCKET_ENABLED=false or exec() is unavailable.
+        WsManager::ensureRunning();
+
         $csrf = Security::csrfToken();
         $basePath = Url::basePath();
         require dirname(__DIR__, 2) . '/views/layout.php';

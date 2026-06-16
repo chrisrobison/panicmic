@@ -25,6 +25,8 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <meta name="app-page" content="<?= e($page) ?>">
   <meta name="app-tenant-slug" content="<?= e($tenant['slug'] ?? '') ?>">
   <meta name="app-session-id" content="<?= e((string)($session['id'] ?? '')) ?>">
+  <meta name="app-ws-enabled" content="<?= e(strtolower((string)(\PanicMic\Support\Env::get('WEBSOCKET_ENABLED', 'true') ?? 'true')) === 'true' ? '1' : '0') ?>">
+  <meta name="app-ws-path" content="<?= e((string)(\PanicMic\Support\Env::get('WEBSOCKET_PUBLIC_PATH', '/ws') ?? '/ws')) ?>">
   <link rel="icon" type="image/png" href="<?= e(Url::path('/favicon-96x96.png')) ?>" sizes="96x96">
   <link rel="icon" type="image/svg+xml" href="<?= e(Url::path('/favicon.svg')) ?>">
   <link rel="shortcut icon" href="<?= e(Url::path('/favicon.ico')) ?>">
