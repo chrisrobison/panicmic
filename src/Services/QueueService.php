@@ -131,9 +131,19 @@ final class QueueService
 
         return self::tx($db, function () use ($db, $sessionId, $data, $requesterToken, $preventDuplicate, $songId, $sharedSongId): int {
             if ($preventDuplicate) {
-                $check = $db->prepare("SELECT id FROM song_requests WHERE session_id = ? AND requester_token = ? AND status IN ('pending','up_next','now_singing') LIMIT 1");
-                $check->execute([$sessionId, $requesterToken]);
-                if ($check->fetch()) {
+                // Limit is per singer name, not per device. This lets a shared
+                // device (kiosk/iPad) serve multiple singers without blocking
+                // them, while still preventing the same name from queuing up
+                // twice at once.
+                $nameCheck = $db->prepare(
+                    "SELECT sr.id FROM song_requests sr
+                     JOIN singers s ON s.id = sr.singer_id
+                     WHERE s.session_id = ? AND s.display_name = ?
+                       AND sr.status IN ('pending','up_next','now_singing')
+                     LIMIT 1"
+                );
+                $nameCheck->execute([$sessionId, trim((string)$data['display_name'])]);
+                if ($nameCheck->fetch()) {
                     throw new \RuntimeException('You already have an active request in the queue.');
                 }
             }

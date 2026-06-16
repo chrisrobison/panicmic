@@ -7,6 +7,24 @@ import { searchSongs, catalogState } from '../lib/catalog.js';
 import { startEvents } from '../lib/events.js';
 
 export function init() {
+  // Shared/kiosk mode: ?shared=1 in the URL means this is a communal device
+  // (e.g., a venue iPad). The name field is cleared after each successful
+  // submission so the next singer can enter their own name without the form
+  // blocking them as a "duplicate device". The per-name queue limit still
+  // applies — the same name cannot have two active requests at once.
+  const isShared = !!new URLSearchParams(window.location.search).get('shared');
+
+  // In shared mode, tweak the form label to make the multi-user intent clear.
+  if (isShared) {
+    const nameLabel = $('[data-request-form] label:has([name="display_name"])');
+    if (nameLabel) nameLabel.firstChild.textContent = 'Your name';
+    const nameInput = $('[name="display_name"]');
+    if (nameInput) {
+      nameInput.placeholder = 'Enter your name';
+      nameInput.autocomplete = 'off';
+    }
+  }
+
   // Request submission
   $('[data-request-form]')?.addEventListener('submit', async event => {
     event.preventDefault();
@@ -19,15 +37,25 @@ export function init() {
     try {
       const payload = formData(form);
       await api('/api/requests', { method: 'POST', body: JSON.stringify(payload) });
-      setStatus(status, 'Request added.');
+
       form.elements.song_id.value = '';
       form.elements.shared_song_id.value = '';
       $$('.song-result.selected').forEach(b => b.classList.remove('selected'));
-      // Clear search field and results so the form is ready for the next person.
+      // Clear search field and results.
       const queryInput = $('[data-song-query]') || $('[name="song_search"]');
       if (queryInput) queryInput.value = '';
       const resultsEl = $('[data-song-results]');
       if (resultsEl) resultsEl.innerHTML = '';
+
+      if (isShared) {
+        // Clear the name so the next singer gets a blank form.
+        form.elements.display_name.value = '';
+        setStatus(status, 'Added! Next singer — enter your name and pick a song.');
+        form.elements.display_name.focus();
+      } else {
+        setStatus(status, 'Request added!');
+      }
+
       await loadQueue();
     } catch (error) { setStatus(status, error.message); }
   });
