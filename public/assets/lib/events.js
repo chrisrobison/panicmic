@@ -55,3 +55,13 @@ export function startEvents(onRefresh) {
     if (timer) clearTimeout(timer);
   };
 }
+
+/**
+ * Alias for startEvents. ws.js calls this as the short-poll fallback
+ * when a WebSocket connection can't be established. Keeping it a named
+ * export (rather than re-exporting startEvents) lets ws.js import a
+ * stable name without depending on internal aliasing.
+ */
+export function startPollingEvents(onRefresh) {
+  return startEvents(onRefresh);
+}

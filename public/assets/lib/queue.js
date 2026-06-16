@@ -19,7 +19,31 @@ const displayPlayer = {
   ytPlayer: null,
   ytApiLoaded: false,
   ytShouldUnmute: false,
+  // WebSocket-synchronized playback state (additive; the short-poll path
+  // never touches these and keeps using showYouTube/showSelfHostedVideo).
+  provider: null,            // 'youtube' | 'self_hosted' | 'none'
+  requestId: null,
+  cued: false,
+  pendingPlayback: { startAtServerMs: null, offsetSeconds: 0 },
+  cancelScheduled: null,     // cancel fn for the scheduled play
+  driftTimer: null,          // self-hosted drift correction interval
+  actualStartMs: null,       // wall-clock ms when local playback began
 };
+
+/**
+ * Scheduler for synchronized playback. Defaults to a plain setTimeout
+ * against local time; ws.js calls setScheduler() with its clock-offset
+ * aware scheduler once it has connected. Kept as a setter to avoid a
+ * circular import between queue.js and ws.js.
+ */
+let scheduleAt = (serverMs, cb) => {
+  const id = setTimeout(cb, Math.max(0, serverMs - Date.now()));
+  return () => clearTimeout(id);
+};
+
+export function setScheduler(fn) {
+  if (typeof fn === 'function') scheduleAt = fn;
+}
 
 export async function loadQueue() {
   // Display windows opened with ?screen=<id> need per-screen state.
@@ -181,6 +205,7 @@ function stopDisplayPlayer() {
   if (displayPlayer.ytPlayer && typeof displayPlayer.ytPlayer.stopVideo === 'function') {
     try { displayPlayer.ytPlayer.stopVideo(); } catch (_) {}
   }
+  clearSyncPlaybackState();
   displayPlayer.currentVideoId = null;
   const yt = $('[data-display-yt]');
   const v = $('[data-display-video]');
@@ -188,6 +213,200 @@ function stopDisplayPlayer() {
   if (yt) yt.hidden = true;
   if (v) { v.pause(); v.removeAttribute('src'); v.hidden = true; }
   if (empty) empty.hidden = true;
+}
+
+function clearSyncPlaybackState() {
+  if (displayPlayer.cancelScheduled) { try { displayPlayer.cancelScheduled(); } catch (_) {} displayPlayer.cancelScheduled = null; }
+  if (displayPlayer.driftTimer) { clearInterval(displayPlayer.driftTimer); displayPlayer.driftTimer = null; }
+  displayPlayer.provider = null;
+  displayPlayer.requestId = null;
+  displayPlayer.cued = false;
+  displayPlayer.pendingPlayback = { startAtServerMs: null, offsetSeconds: 0 };
+  displayPlayer.actualStartMs = null;
+}
+
+/* -------------------------------------------------------------- */
+/* WebSocket-synchronized player control (additive).              */
+/*                                                                */
+/* These coexist with syncDisplayPlayer()'s immediate-play path.  */
+/* The short-poll flow keeps calling showYouTube/showSelfHosted   */
+/* directly; the WS flow cues first then plays at a server time.  */
+/* -------------------------------------------------------------- */
+
+/**
+ * Cue a video (load but don't play). onReady(provider) fires once the
+ * video is loaded and ready to start.
+ * videoInfo: { provider, youtubeVideoId, videoUrl, requestId }
+ */
+export function cueDisplayPlayer(videoInfo, onReady) {
+  const info = videoInfo || {};
+  const provider = info.provider || 'none';
+  displayPlayer.provider = provider;
+  displayPlayer.requestId = info.requestId ?? null;
+  displayPlayer.cued = false;
+  displayPlayer.pendingPlayback = { startAtServerMs: null, offsetSeconds: 0 };
+
+  const yt = $('[data-display-yt]');
+  const v = $('[data-display-video]');
+  const empty = $('[data-display-player-empty]');
+
+  const ready = () => {
+    displayPlayer.cued = true;
+    try { onReady?.(provider); } catch (_) {}
+  };
+
+  if (provider === 'youtube' && info.youtubeVideoId) {
+    if (v) { v.pause(); v.hidden = true; }
+    if (empty) empty.hidden = true;
+    if (!yt) { ready(); return; }
+    yt.hidden = false;
+    displayPlayer.currentVideoId = info.youtubeVideoId;
+    loadYouTubeApi(() => {
+      const onState = e => {
+        if (e.data === YT.PlayerState.CUED) ready();
+      };
+      if (!displayPlayer.ytPlayer) {
+        displayPlayer.ytPlayer = new YT.Player(yt, {
+          height: '100%',
+          width: '100%',
+          videoId: info.youtubeVideoId,
+          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
+          events: {
+            onReady: e => { try { e.target.mute(); e.target.cueVideoById(info.youtubeVideoId); } catch (_) {} },
+            onStateChange: onState,
+          },
+        });
+      } else {
+        try {
+          displayPlayer.ytPlayer.mute();
+          displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
+          displayPlayer.ytPlayer.addEventListener('onStateChange', onState);
+        } catch (_) { ready(); }
+      }
+    });
+    return;
+  }
+
+  if (provider === 'self_hosted' && info.videoUrl) {
+    const src = resolveVideoUrl(info.videoUrl);
+    if (yt) yt.hidden = true;
+    if (empty) empty.hidden = true;
+    if (!v) { ready(); return; }
+    v.muted = true;
+    v.preload = 'auto';
+    if (v.getAttribute('src') !== src) v.setAttribute('src', src);
+    v.hidden = false;
+    const onCanPlay = () => { v.removeEventListener('canplay', onCanPlay); ready(); };
+    v.addEventListener('canplay', onCanPlay);
+    try { v.load(); } catch (_) {}
+    // If already buffered enough, canplay may not refire.
+    if (v.readyState >= 3) { v.removeEventListener('canplay', onCanPlay); ready(); }
+    return;
+  }
+
+  // provider 'none' or unknown: show the empty placeholder immediately.
+  showEmptyPlayer(null);
+  displayPlayer.provider = 'none';
+  ready();
+}
+
+/**
+ * Schedule synchronized playback at a server wall-clock time (ms).
+ * offsetSeconds seeks to this position before playing.
+ */
+export function playDisplayPlayerAt(startAtServerMs, offsetSeconds = 0) {
+  displayPlayer.pendingPlayback = { startAtServerMs, offsetSeconds };
+  if (displayPlayer.cancelScheduled) { try { displayPlayer.cancelScheduled(); } catch (_) {} }
+  displayPlayer.cancelScheduled = scheduleAt(startAtServerMs, () => {
+    displayPlayer.actualStartMs = Date.now();
+    startSyncedPlayback(offsetSeconds);
+  });
+}
+
+function startSyncedPlayback(offsetSeconds) {
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try {
+      displayPlayer.ytPlayer.mute(); // display pages stay muted
+      if (offsetSeconds > 0) displayPlayer.ytPlayer.seekTo(offsetSeconds, true);
+      displayPlayer.ytPlayer.playVideo();
+    } catch (_) {}
+    return;
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (!v) return;
+    v.muted = true;
+    try { if (offsetSeconds > 0) v.currentTime = offsetSeconds; } catch (_) {}
+    v.play().catch(() => {});
+    startDriftCorrection(v, offsetSeconds);
+  }
+}
+
+function startDriftCorrection(video, offsetSeconds) {
+  if (displayPlayer.driftTimer) clearInterval(displayPlayer.driftTimer);
+  displayPlayer.driftTimer = setInterval(() => {
+    if (!video || video.paused || displayPlayer.actualStartMs === null) return;
+    const expected = (Date.now() - displayPlayer.actualStartMs) / 1000 + offsetSeconds;
+    const drift = video.currentTime - expected;
+    if (Math.abs(drift) > 0.5) {
+      try { video.currentTime = expected; } catch (_) {}
+      video.playbackRate = 1.0;
+    } else if (drift > 0.1) {
+      video.playbackRate = 0.95; // we're ahead, slow down
+    } else if (drift < -0.1) {
+      video.playbackRate = 1.05; // we're behind, speed up
+    } else {
+      video.playbackRate = 1.0;
+    }
+  }, 2000);
+}
+
+/** Current player status, or null when no player is active. */
+export function getDisplayPlayerStatus() {
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try {
+      const stateMap = { '-1': 'unstarted', 0: 'ended', 1: 'playing', 2: 'paused', 3: 'buffering', 5: 'cued' };
+      const ps = displayPlayer.ytPlayer.getPlayerState();
+      return {
+        requestId: displayPlayer.requestId,
+        videoId: displayPlayer.currentVideoId,
+        provider: 'youtube',
+        playerState: stateMap[ps] ?? String(ps),
+        currentTime: displayPlayer.ytPlayer.getCurrentTime?.() ?? 0,
+        muted: displayPlayer.ytPlayer.isMuted?.() ?? true,
+      };
+    } catch (_) { return null; }
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (!v) return null;
+    return {
+      requestId: displayPlayer.requestId,
+      videoId: v.getAttribute('src') || '',
+      provider: 'self_hosted',
+      playerState: v.paused ? 'paused' : 'playing',
+      currentTime: v.currentTime || 0,
+      muted: !!v.muted,
+    };
+  }
+  return null;
+}
+
+/** Seek the active player to a position in seconds. */
+export function seekDisplayPlayer(seconds) {
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.seekTo(seconds, true); } catch (_) {}
+    return;
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) { try { v.currentTime = seconds; } catch (_) {} }
+  }
+}
+
+/** Stop and clear the player. Public wrapper over the internal stop. */
+export function stopDisplayPlayerPublic() {
+  stopDisplayPlayer();
 }
 
 function showEmptyPlayer(current) {

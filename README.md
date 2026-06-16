@@ -94,6 +94,81 @@ Seeded logins:
 - KJ (tenant admin): `admin@bluebird.panicmic.com` / `password123`
 - Super admin: `super@panicmic.com` / `password123`
 
+## WebSocket Display Sync (Optional)
+
+PanicMic ships a standalone WebSocket daemon that enables synchronized
+playback across remote display screens. It is entirely optional: the app
+works without it, and display clients fall back to short-polling.
+
+### Running the daemon locally
+
+```bash
+php scripts/ws-server.php
+```
+
+The server reads `WEBSOCKET_BIND` and `WEBSOCKET_PORT` from `.env` (defaults:
+`127.0.0.1:8090`). Run it alongside the PHP development server:
+
+```bash
+php -S 0.0.0.0:8000 -t public &
+php scripts/ws-server.php
+```
+
+### nginx reverse proxy
+
+Proxy `/ws` to the daemon so it shares the same origin as the app. This
+avoids CORS issues and lets TLS terminate on nginx:
+
+```nginx
+location /ws {
+    proxy_pass         http://127.0.0.1:8090;
+    proxy_http_version 1.1;
+    proxy_set_header   Upgrade    $http_upgrade;
+    proxy_set_header   Connection "upgrade";
+    proxy_set_header   Host       $host;
+    proxy_read_timeout 3600s;
+}
+```
+
+### Configuration
+
+Add to `.env` (see `.env.example`):
+
+```
+WEBSOCKET_ENABLED=true
+WEBSOCKET_BIND=127.0.0.1
+WEBSOCKET_PORT=8090
+WEBSOCKET_PUBLIC_PATH=/ws
+```
+
+### Behavior without the daemon
+
+Set `WEBSOCKET_ENABLED=false` or simply don't run the daemon. Browsers fall
+back to short-polling every 4–6 seconds (the existing `EventBus` path). All
+existing REST endpoints continue to work.
+
+### YouTube sync
+
+YouTube playback is best-effort due to iframe API limitations. The daemon
+schedules a `display:play_at` command with a future timestamp so all displays
+start at approximately the same wall-clock moment.
+
+### Self-hosted video sync
+
+Self-hosted `<video>` elements support tighter drift correction via
+`currentTime` and `playbackRate` adjustment. After scheduled playback begins,
+the display client checks drift every 2 seconds and gently corrects within
+±0.5s.
+
+### Raspberry Pi / Chromium display
+
+Chromium allows muted autoplay. Display pages always keep video muted, so
+`autoplay` works without user interaction. Point Chromium to:
+
+```
+chromium-browser --kiosk http://yourslug.panicmic.com/display?screen=main
+```
+
 ## Local Multi-Hostname Development
 
 Browsers include the port in the Host header. Tenant lookup normalizes hosts by
