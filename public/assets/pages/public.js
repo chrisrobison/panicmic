@@ -64,6 +64,13 @@ export function init() {
   const queryInput = $('[data-song-query]') || $('[name="song_search"]');
   let queryDebounce = null;
   queryInput?.addEventListener('input', () => {
+    // If the user starts typing again, clear any previously selected song so
+    // the new search results aren't blocked by a stale pick.
+    const form = $('[data-request-form]');
+    if (form) {
+      form.elements.song_id.value = '';
+      form.elements.shared_song_id.value = '';
+    }
     clearTimeout(queryDebounce);
     queryDebounce = setTimeout(() => searchSongs(true).catch(() => {}), 200);
   });
@@ -80,7 +87,9 @@ export function init() {
     }
   });
 
-  // Song pick — selecting a search result populates the hidden field.
+  // Song pick — selecting a search result populates the hidden field, fills
+  // the search box with the chosen song, and collapses the results list so
+  // it's clear exactly one song is selected.
   document.addEventListener('click', event => {
     const pick = event.target.closest('[data-song-pick]');
     if (!pick) return;
@@ -89,9 +98,13 @@ export function init() {
       const source = pick.dataset.songSource || 'local';
       form.elements.song_id.value = source === 'local' ? pick.dataset.songId : '';
       form.elements.shared_song_id.value = source === 'shared' ? pick.dataset.songId : '';
+
+      // Show the chosen song in the search field and collapse the list.
+      const q = $('[data-song-query]') || $('[name="song_search"]');
+      if (q) q.value = pick.dataset.songLabel || '';
+      const results = $('[data-song-results]');
+      if (results) results.innerHTML = '';
     }
-    $$('.song-result.selected').forEach(b => b.classList.remove('selected'));
-    pick.classList.add('selected');
   });
 
   // Catalog page (/songs): initial load, help (?) toggle, and infinite scroll.
