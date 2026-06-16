@@ -37,6 +37,14 @@ const PONG_TIMEOUT_S = 60;
 const PUMP_INTERVAL_S = 0.5;
 const SELECT_TIMEOUT_US = 100000; // 0.1s
 
+// Self-exit when idle. The daemon is started on-demand by WsManager::ensureRunning()
+// triggered from page renders, so it shouldn't need to run indefinitely.
+// STARTUP_GRACE_S: don't exit during initial startup (gives the first browser tab
+// time to connect after the page that triggered the launch finishes rendering).
+// IDLE_EXIT_S: exit this many seconds after the last client disconnects.
+const STARTUP_GRACE_S = 30;
+const IDLE_EXIT_S     = 30;
+
 function ws_log(string $msg): void
 {
     fwrite(STDERR, '[' . date('Y-m-d H:i:s') . '] ' . $msg . "\n");
@@ -55,6 +63,18 @@ if (!$server) {
 }
 stream_set_blocking($server, false);
 ws_log("listening on {$listenAddr}");
+
+// Write PID file so WsManager::ensureRunning() can see we're alive.
+// The shutdown function removes it cleanly whether we exit normally or crash.
+$pidFile = dirname(__DIR__) . '/storage/ws-server.pid';
+@file_put_contents($pidFile, (string)getmypid(), LOCK_EX);
+register_shutdown_function(static function () use ($pidFile): void {
+    @unlink($pidFile);
+});
+
+// Timestamps used for idle self-exit.
+$startupTime    = microtime(true);
+$lastActivityTime = microtime(true); // updated whenever we have ≥1 client
 
 /**
  * Per-connection state.
@@ -635,9 +655,28 @@ while (is_resource($server)) {
                 $clients[$id]['lastPing'] = $now;
             }
         }
+        // Track activity time while we have clients, so we know when the
+        // idle window started (i.e., when count dropped to zero).
+        if (count($clients) > 0) {
+            $lastActivityTime = $now;
+        }
+
+        // Idle self-exit: once all clients are gone and the idle window has
+        // elapsed, shut down cleanly. The startup grace period prevents the
+        // daemon from exiting before the first browser tab connects.
+        if (count($clients) === 0
+            && ($now - $startupTime)    > STARTUP_GRACE_S
+            && ($now - $lastActivityTime) > IDLE_EXIT_S
+        ) {
+            ws_log('no clients for ' . round($now - $lastActivityTime) . 's — shutting down');
+            break;
+        }
     } catch (Throwable $e) {
         // A single bad connection must never crash the daemon.
         ws_log('loop error: ' . $e->getMessage());
         usleep(50000);
     }
 }
+
+ws_log('daemon exited');
+// PID file is removed by register_shutdown_function above.
