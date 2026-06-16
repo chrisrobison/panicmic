@@ -55,4 +55,17 @@ final class RateLimitTest extends DatabaseTestCase
         $bucket = Security::loginBucket('  USER@Example.com  ');
         self::assertSame('login:203.0.113.7:user@example.com', $bucket);
     }
+
+    public function testSignupBucketThrottlesPerIpAndIsolatesAcrossIps(): void
+    {
+        // Signup uses the same DB-backed bucket store as login. Repeated
+        // hits from one IP accumulate (driving toward the 429), while a
+        // different IP starts from a clean count.
+        $first = Security::signupBucket('203.0.113.50');
+        for ($i = 1; $i <= 3; $i++) {
+            self::assertSame($i, Security::rateLimitDb($this->superDb, $first, 10, 3600));
+        }
+        $other = Security::signupBucket('203.0.113.51');
+        self::assertSame(1, Security::rateLimitDb($this->superDb, $other, 10, 3600));
+    }
 }

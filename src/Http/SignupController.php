@@ -9,6 +9,7 @@ use PanicMic\Services\SignupService;
 use PanicMic\Support\Env;
 use PanicMic\Support\Request;
 use PanicMic\Support\Response;
+use PanicMic\Support\Security;
 
 final class SignupController
 {
@@ -33,6 +34,10 @@ final class SignupController
     public static function register(): never
     {
         $superDb = Connection::super();
+        // Throttle per-IP: signup auto-provisions a database and the
+        // taken/available responses otherwise allow subdomain enumeration.
+        // DB-backed so it survives session resets (shares login_attempts).
+        Security::rateLimitDb($superDb, Security::signupBucket(), 10, 3600);
         $input = Request::input();
         try {
             $result = SignupService::register($superDb, [

@@ -73,12 +73,14 @@ final class SongService
     {
         $stmt = $db->prepare(
             'INSERT INTO songs
-             (title, artist, genre, decade, popularity, external_id, video_url, video_provider, provider_track_id, provider_url, lyrics_url, provider_metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+             (title, artist, album, album_art_url, genre, decade, popularity, external_id, video_url, video_provider, provider_track_id, provider_url, lyrics_url, provider_metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
         $stmt->execute([
             trim((string)$data['title']),
             trim((string)$data['artist']),
+            self::nullableText($data['album'] ?? null, 255),
+            self::nullableUrl($data['album_art_url'] ?? null),
             trim((string)($data['genre'] ?? '')) ?: null,
             ($data['decade'] ?? null) ?: null,
             (int)($data['popularity'] ?? 0),
@@ -98,13 +100,15 @@ final class SongService
     {
         $stmt = $db->prepare(
             'UPDATE songs
-             SET title = ?, artist = ?, genre = ?, decade = ?, popularity = ?, external_id = ?,
+             SET title = ?, artist = ?, album = ?, album_art_url = ?, genre = ?, decade = ?, popularity = ?, external_id = ?,
                  video_url = ?, video_provider = ?, provider_track_id = ?, provider_url = ?, lyrics_url = ?, provider_metadata = ?
              WHERE id = ?'
         );
         $stmt->execute([
             trim((string)$data['title']),
             trim((string)$data['artist']),
+            self::nullableText($data['album'] ?? null, 255),
+            self::nullableUrl($data['album_art_url'] ?? null),
             trim((string)($data['genre'] ?? '')) ?: null,
             ($data['decade'] ?? null) ?: null,
             (int)($data['popularity'] ?? 0),
@@ -155,9 +159,11 @@ final class SongService
     {
         $stmt = $db->prepare(
             'INSERT INTO songs
-             (title, artist, genre, decade, popularity, external_id, video_url, video_provider, provider_track_id, provider_url, lyrics_url, provider_metadata)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             (title, artist, album, album_art_url, genre, decade, popularity, external_id, video_url, video_provider, provider_track_id, provider_url, lyrics_url, provider_metadata)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE
+               album = COALESCE(VALUES(album), album),
+               album_art_url = COALESCE(VALUES(album_art_url), album_art_url),
                genre = COALESCE(VALUES(genre), genre),
                decade = COALESCE(VALUES(decade), decade),
                popularity = GREATEST(popularity, VALUES(popularity)),
@@ -182,6 +188,8 @@ final class SongService
                 $stmt->execute([
                     substr($title, 0, 255),
                     substr($artist, 0, 255),
+                    self::nullableText($row['album'] ?? null, 255),
+                    self::nullableUrl($row['album_art_url'] ?? null),
                     self::nullableText($row['genre'] ?? null, 120),
                     isset($row['decade']) && $row['decade'] !== '' ? (int)$row['decade'] : null,
                     isset($row['popularity']) ? (int)$row['popularity'] : 0,

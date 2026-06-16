@@ -125,6 +125,44 @@ final class SharedCatalogService
         $stmt->execute([$id]);
     }
 
+    /**
+     * Persist Last.fm enrichment for one shared song. Existing curated
+     * values win (COALESCE keeps them) so a re-run never wipes good data;
+     * `genre` is only filled when empty. `lastfm_enriched_at` is always
+     * stamped so the backfill job skips this row next time, even when
+     * Last.fm had nothing useful (pass an empty array).
+     *
+     * @param array<string,mixed> $info Output of LastfmService::trackInfo()
+     */
+    public static function applyLastfm(PDO $superDb, int $id, array $info): void
+    {
+        $tags = !empty($info['tags']) && is_array($info['tags']) ? json_encode(array_values($info['tags'])) : null;
+        $stmt = $superDb->prepare(
+            'UPDATE shared_songs SET
+               album = COALESCE(?, album),
+               album_art_url = COALESCE(?, album_art_url),
+               mbid = COALESCE(?, mbid),
+               lastfm_url = COALESCE(?, lastfm_url),
+               listeners = COALESCE(?, listeners),
+               playcount = COALESCE(?, playcount),
+               tags = COALESCE(?, tags),
+               genre = COALESCE(genre, ?),
+               lastfm_enriched_at = NOW()
+             WHERE id = ?'
+        );
+        $stmt->execute([
+            $info['album'] ?? null,
+            $info['album_art_url'] ?? null,
+            $info['mbid'] ?? null,
+            $info['lastfm_url'] ?? null,
+            $info['listeners'] ?? null,
+            $info['playcount'] ?? null,
+            $tags,
+            $info['genre'] ?? null,
+            $id,
+        ]);
+    }
+
     /** @return array{0:string,1:list<mixed>} */
     private static function buildFilter(array $filters): array
     {
@@ -161,6 +199,9 @@ final class SharedCatalogService
             : null;
         $row['languages'] = isset($row['languages']) && $row['languages'] !== null
             ? (is_string($row['languages']) ? json_decode($row['languages'], true) : $row['languages'])
+            : null;
+        $row['tags'] = isset($row['tags']) && $row['tags'] !== null
+            ? (is_string($row['tags']) ? json_decode($row['tags'], true) : $row['tags'])
             : null;
         return $row;
     }

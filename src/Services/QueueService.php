@@ -19,6 +19,7 @@ final class QueueService
                     sr.song_id, sr.shared_song_id,
                     s.id singer_id, s.display_name singer_name,
                     songs.title local_title, songs.artist local_artist, songs.genre local_genre, songs.decade local_decade,
+                    songs.album local_album, songs.album_art_url local_album_art_url,
                     songs.video_url local_video_url, songs.provider_url local_provider_url, songs.video_provider local_video_provider
              FROM queue_items qi
              JOIN song_requests sr ON sr.id = qi.request_id
@@ -46,11 +47,14 @@ final class QueueService
             $row['artist'] = $row['local_artist'] ?? ($shared['artist'] ?? '');
             $row['genre'] = $row['local_genre'] ?? ($shared['genre'] ?? null);
             $row['decade'] = $row['local_decade'] ?? ($shared['decade'] ?? null);
+            $row['album'] = $row['local_album'] ?? ($shared['album'] ?? null);
+            $row['album_art_url'] = $row['local_album_art_url'] ?? ($shared['album_art_url'] ?? null);
             $row['video_url'] = $row['local_video_url'] ?? null;
             $row['provider_url'] = $row['local_provider_url'] ?? null;
             $row['video_provider'] = $row['local_video_provider'] ?? null;
             $row['song_source'] = !empty($row['song_id']) ? 'local' : (!empty($row['shared_song_id']) ? 'shared' : null);
             unset($row['local_title'], $row['local_artist'], $row['local_genre'], $row['local_decade'],
+                  $row['local_album'], $row['local_album_art_url'],
                   $row['local_video_url'], $row['local_provider_url'], $row['local_video_provider']);
             return $row;
         }, $rows);

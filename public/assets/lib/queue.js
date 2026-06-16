@@ -13,6 +13,7 @@
 
 import { $, $$, escapeHtml } from './dom.js';
 import { api, appConfig } from './api.js';
+import { coverMarkup } from './albumArt.js';
 
 const displayPlayer = {
   currentVideoId: null,
@@ -62,7 +63,10 @@ export function renderPublicQueue(queue) {
   $$('[data-public-queue]').forEach(container => {
     container.innerHTML = queue.filter(item => !['completed', 'skipped', 'canceled'].includes(item.queue_status)).map((item, index) => `
       <div class="queue-item status-${escapeHtml(item.queue_status)}">
-        <div><strong>${index + 1}. ${escapeHtml(item.singer_name)}</strong><br>${escapeHtml(item.title)} - ${escapeHtml(item.artist)}</div>
+        <div class="queue-item-main">
+          ${coverMarkup(item)}
+          <div><strong>${index + 1}. ${escapeHtml(item.singer_name)}</strong><br>${escapeHtml(item.title)} - ${escapeHtml(item.artist)}</div>
+        </div>
         <span>${escapeHtml(item.queue_status.replace('_', ' '))}</span>
       </div>
     `).join('') || '<p>No singers in queue yet.</p>';
@@ -93,10 +97,13 @@ export function renderAdminQueue(queue) {
   if (!container) return;
   container.innerHTML = queue.map(item => `
     <article class="queue-item status-${escapeHtml(item.queue_status)}" draggable="true" data-request-id="${item.request_id}">
-      <div>
-        <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
-        <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
-        ${renderQueueItemSource(item)}
+      <div class="queue-item-main">
+        ${coverMarkup(item)}
+        <div>
+          <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
+          <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
+          ${renderQueueItemSource(item)}
+        </div>
       </div>
       <div class="queue-actions">
         ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
@@ -131,17 +138,17 @@ export function renderDisplay(queue, display = {}) {
   const next = queue.find(item => item.queue_status === 'up_next') || queue.find(item => item.queue_status === 'pending');
 
   if (current) {
-    now.innerHTML = `<strong>${escapeHtml(current.singer_name)}</strong><br>${escapeHtml(current.title)} - ${escapeHtml(current.artist)}`;
+    now.innerHTML = `${coverMarkup(current, 'album-art album-art--now')}<strong>${escapeHtml(current.singer_name)}</strong><br>${escapeHtml(current.title)} - ${escapeHtml(current.artist)}`;
   } else {
     now.innerHTML = '<span>Ready for requests</span>';
   }
   const upNextEl = $('[data-up-next]');
   if (upNextEl) {
-    upNextEl.innerHTML = next ? `<strong>${escapeHtml(next.singer_name)}</strong> — ${escapeHtml(next.title)}` : 'No singers queued yet.';
+    upNextEl.innerHTML = next ? `${coverMarkup(next, 'album-art album-art--sm')}<strong>${escapeHtml(next.singer_name)}</strong> — ${escapeHtml(next.title)}` : 'No singers queued yet.';
   }
   const dq = $('[data-display-queue]');
   if (dq) {
-    dq.innerHTML = queue.filter(item => !['completed', 'skipped', 'canceled'].includes(item.queue_status)).slice(0, 8).map((item, index) => `<div><span>${index + 1}.</span> ${escapeHtml(item.singer_name)} — ${escapeHtml(item.title)}</div>`).join('') || '<p>Queue is empty.</p>';
+    dq.innerHTML = queue.filter(item => !['completed', 'skipped', 'canceled'].includes(item.queue_status)).slice(0, 8).map((item, index) => `<div>${coverMarkup(item, 'album-art album-art--micro')}<span>${index + 1}.</span> ${escapeHtml(item.singer_name)} — ${escapeHtml(item.title)}</div>`).join('') || '<p>Queue is empty.</p>';
   }
   const qr = $('[data-qr]');
   if (qr && !qr.innerHTML.trim()) qr.innerHTML = qrSvg('Scan for requests');

@@ -72,6 +72,8 @@ final class AuthController
         if (!$admin) {
             return;
         }
+        // Rotate the session id at the privilege boundary before elevating.
+        Security::regenerateSession();
         $_SESSION['super_admin'] = [
             'id' => (int)$admin['id'],
             'email' => $admin['email'],
