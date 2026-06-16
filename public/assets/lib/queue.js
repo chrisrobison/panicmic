@@ -150,12 +150,7 @@ export function renderDisplay(queue, display = {}) {
   if (!dq) return;
 
   const current = queue.find(item => item.request_id === display.now_request_id) || queue.find(item => item.queue_status === 'now_singing');
-
-  // Update the "Now Playing" bar at the top of the stage.
-  const nowTitle = $('[data-display-now-title]');
-  const nowSinger = $('[data-display-now-singer]');
-  if (nowTitle) nowTitle.textContent = current ? `${current.title} — ${current.artist}` : 'Ready for requests';
-  if (nowSinger) nowSinger.textContent = current ? current.singer_name : '';
+  const next = queue.find(item => item.queue_status === 'up_next') || queue.find(item => item.queue_status === 'pending' && item !== current);
 
   // Build rich singer-queue rows in the sidebar.
   const AVG_MIN = 5;
@@ -201,17 +196,40 @@ export function renderDisplay(queue, display = {}) {
     }
   }
 
-  syncDisplayPlayer(current, display);
+  syncDisplayPlayer(current, display, next);
 }
 
-function syncDisplayPlayer(current, display = {}) {
+function syncDisplayPlayer(current, display = {}, next = null) {
   const playerRoot = $('[data-display-player]');
-  const idleEl = $('[data-display-idle]');
+  const betweenEl = $('[data-display-between]');
   if (!playerRoot) return;
 
   const playMode = display.mode === 'now_singing';
+
+  // --- Now-bar: label + title + singer ---
+  // While playing  → "NOW PLAYING / Song — Artist / Singer name"
+  // Between singers → "UP NEXT / Singer name / Song — Artist"
+  // Truly idle      → "NOW PLAYING / Ready for requests / (blank)"
+  const nowLabel  = $('[data-display-now-label]');
+  const nowTitle  = $('[data-display-now-title]');
+  const nowSinger = $('[data-display-now-singer]');
+  if (playMode && current) {
+    if (nowLabel)  nowLabel.textContent  = 'NOW PLAYING';
+    if (nowTitle)  nowTitle.textContent  = `${current.title} — ${current.artist}`;
+    if (nowSinger) nowSinger.textContent = current.singer_name;
+  } else if (next) {
+    if (nowLabel)  nowLabel.textContent  = 'UP NEXT';
+    if (nowTitle)  nowTitle.textContent  = next.singer_name;
+    if (nowSinger) nowSinger.textContent = `${next.title} — ${next.artist}`;
+  } else {
+    if (nowLabel)  nowLabel.textContent  = 'NOW PLAYING';
+    if (nowTitle)  nowTitle.textContent  = 'Ready for requests';
+    if (nowSinger) nowSinger.textContent = '';
+  }
+
+  // --- Viewport layers ---
   playerRoot.hidden = !playMode;
-  if (idleEl) idleEl.hidden = playMode;
+  if (betweenEl) betweenEl.hidden = playMode; // QR screen when not playing
 
   if (!playMode) {
     stopDisplayPlayer();

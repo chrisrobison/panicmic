@@ -12,16 +12,16 @@ $requestQr = QrCode::svg($requestUrl, 320);
   <!-- Stage: left area (video + overlays) -->
   <div class="display-stage">
 
-    <!-- Now Playing bar (top overlay) -->
+    <!-- Now Playing / Up Next bar (top overlay) -->
     <div class="display-now-bar">
-      <span class="display-now-label">NOW PLAYING</span>
+      <span class="display-now-label" data-display-now-label>NOW PLAYING</span>
       <div class="display-now-info">
         <strong data-display-now-title>Ready for requests</strong>
         <span data-display-now-singer></span>
       </div>
     </div>
 
-    <!-- Viewport: player, idle overlay, and lower-third stacked -->
+    <!-- Viewport: player, between-singer screen, and lower-third stacked -->
     <div class="display-viewport">
 
       <!-- Video player (shown when mode === now_singing) -->
@@ -34,9 +34,10 @@ $requestQr = QrCode::svg($requestUrl, 320);
         </div>
       </div>
 
-      <!-- Idle overlay (shown when no active singer) -->
-      <div class="display-idle" data-display-idle>
-        <span>Ready for requests</span>
+      <!-- Between-singer screen: large QR + "scan to add your song" -->
+      <div class="display-between" data-display-between>
+        <div class="display-between-qr"><?= $requestQr ?></div>
+        <p class="display-between-cta">Scan to add your song</p>
       </div>
 
       <!-- Lower third: singer name + song while playing -->

@@ -223,20 +223,35 @@ h1, h2, p { margin-top: 0; }
 .display-player-frame { width: 100%; height: 100%; border: 0; }
 .display-player-empty { color: var(--text); text-align: center; padding: 32px; }
 .display-player-empty h2 { font-size: clamp(28px, 4vw, 56px); margin: 0 0 12px; }
-/* Idle overlay fills viewport when player is hidden */
-.display-idle {
+/* Between-singer screen: large QR + CTA, shown when not playing */
+.display-between {
   position: absolute;
   inset: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  z-index: 1;
 }
-.display-idle[hidden] { display: none; }
-.display-idle span {
-  font-size: clamp(28px, 5vw, 72px);
-  font-weight: 900;
-  color: rgba(255,255,255,0.15);
+.display-between[hidden] { display: none; }
+.display-between-qr svg,
+.display-between-qr img {
+  display: block;
+  width: min(44vh, 38vw);
+  height: min(44vh, 38vw);
+  background: #fff;
+  padding: 14px;
+  border-radius: 16px;
+  box-shadow: 0 8px 48px rgba(0,0,0,0.55);
+}
+.display-between-cta {
+  font-size: clamp(14px, 1.8vw, 26px);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
   text-align: center;
-  letter-spacing: -0.02em;
 }
 /* Lower third: singer/song overlay at bottom of viewport */
 .display-lower-third {
