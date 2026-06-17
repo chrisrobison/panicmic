@@ -9,12 +9,45 @@ import { coverMarkup } from './albumArt.js';
 
 const state = { page: 1, size: 50, total: 0, lastFilters: {} };
 
+/** Active discovery tag chip (set by chip UI). */
+let activeTagChip = '';
+
 export function readCatalogFilters() {
   return {
-    query: $('[data-song-query]')?.value || $('[name="song_search"]')?.value || '',
-    genre: $('[data-song-genre]')?.value || '',
+    query:  $('[data-song-query]')?.value || $('[name="song_search"]')?.value || '',
+    genre:  $('[data-song-genre]')?.value  || '',
     decade: $('[data-song-decade]')?.value || '',
+    tag:    activeTagChip,
+    sort:   activeTagChip ? 'karaoke' : '',
   };
+}
+
+/**
+ * Wire up discovery browse chips.
+ * Call once from the page's init function.
+ */
+export function initBrowseChips() {
+  const chips = Array.from(document.querySelectorAll('[data-tag-chip]'));
+  if (!chips.length) return;
+
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const tag = chip.dataset.tagChip ?? '';
+      activeTagChip = tag;
+      chips.forEach(c => {
+        c.classList.toggle('active', c.dataset.tagChip === tag);
+        c.setAttribute('aria-pressed', String(c.dataset.tagChip === tag));
+      });
+      searchSongs(true);
+    });
+  });
+
+  // Mark "All" as initially active
+  const allChip = chips.find(c => c.dataset.tagChip === '');
+  if (allChip) {
+    allChip.classList.add('active');
+    allChip.setAttribute('aria-pressed', 'true');
+  }
 }
 
 export async function searchSongs(reset = true, { append = false } = {}) {

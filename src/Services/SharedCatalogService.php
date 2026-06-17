@@ -20,7 +20,8 @@ final class SharedCatalogService
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
 
-        $stmt = $superDb->prepare("SELECT * FROM shared_songs WHERE {$whereSql} ORDER BY artist ASC, title ASC LIMIT {$size} OFFSET {$offset}");
+        $order = self::buildOrder($filters);
+        $stmt = $superDb->prepare("SELECT * FROM shared_songs WHERE {$whereSql} ORDER BY {$order} LIMIT {$size} OFFSET {$offset}");
         $stmt->execute($params);
         $rows = array_map(self::decode(...), $stmt->fetchAll());
 
@@ -163,6 +164,108 @@ final class SharedCatalogService
         ]);
     }
 
+    // ------------------------------------------------------------------
+    // Curated-import layer helpers
+    // ------------------------------------------------------------------
+
+    /**
+     * Find a shared song by normalized artist + title.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function findByNormalized(PDO $superDb, string $normArtist, string $normTitle): ?array
+    {
+        $stmt = $superDb->prepare(
+            'SELECT * FROM shared_songs WHERE normalized_artist = ? AND normalized_title = ? LIMIT 1'
+        );
+        $stmt->execute([$normArtist, $normTitle]);
+        $row = $stmt->fetch();
+        return $row ? self::decode($row) : null;
+    }
+
+    /**
+     * Return all tag slugs attached to a shared song.
+     *
+     * @return list<string>
+     */
+    public static function tagSlugsForSong(PDO $superDb, int $id): array
+    {
+        $stmt = $superDb->prepare(
+            'SELECT t.slug FROM shared_song_tag_links tl
+             JOIN shared_song_tags t ON t.id = tl.tag_id
+             WHERE tl.shared_song_id = ?'
+        );
+        $stmt->execute([$id]);
+        return $stmt->fetchAll(\PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * Full metadata for a shared song: base row + source appearances + tags.
+     *
+     * @return array<string,mixed>|null
+     */
+    public static function metadata(PDO $superDb, int $id): ?array
+    {
+        $song = self::find($superDb, $id);
+        if (!$song) {
+            return null;
+        }
+
+        // Source appearances
+        $srcStmt = $superDb->prepare(
+            'SELECT sl.rank, sl.year AS link_year, sl.source_weight,
+                    src.name AS source_name, src.slug AS source_slug,
+                    src.station, src.market, src.source_type,
+                    lst.title AS list_title, lst.slug AS list_slug,
+                    lst.year AS list_year, lst.genre_hint
+             FROM shared_song_source_links sl
+             JOIN shared_song_sources src ON src.id = sl.source_id
+             JOIN shared_song_source_lists lst ON lst.id = sl.source_list_id
+             WHERE sl.shared_song_id = ?
+             ORDER BY sl.rank ASC, lst.year DESC'
+        );
+        $srcStmt->execute([$id]);
+        $song['source_appearances'] = $srcStmt->fetchAll();
+
+        // Tags
+        $tagStmt = $superDb->prepare(
+            'SELECT t.id, t.name, t.slug, t.tag_type, tl.confidence, tl.source
+             FROM shared_song_tag_links tl
+             JOIN shared_song_tags t ON t.id = tl.tag_id
+             WHERE tl.shared_song_id = ?
+             ORDER BY tl.confidence DESC, t.name'
+        );
+        $tagStmt->execute([$id]);
+        $song['discovery_tags_detail'] = $tagStmt->fetchAll();
+
+        return $song;
+    }
+
+    /**
+     * Update curation fields (curator_notes, primary_genre, karaoke_difficulty) for a song.
+     *
+     * @param array<string,mixed> $data
+     */
+    public static function patchCuration(PDO $superDb, int $id, array $data): void
+    {
+        $allowed = ['curator_notes', 'primary_genre', 'karaoke_difficulty', 'singalong_score',
+                    'nostalgia_score', 'crowd_score', 'source_score', 'karaoke_score'];
+        $fields = [];
+        $params = [];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $data)) {
+                $fields[] = "{$field} = ?";
+                $params[] = $data[$field] !== '' ? $data[$field] : null;
+            }
+        }
+        if (!$fields) {
+            return;
+        }
+        $params[] = $id;
+        $superDb->prepare('UPDATE shared_songs SET ' . implode(', ', $fields) . ' WHERE id = ?')
+                ->execute($params);
+    }
+
     /** @return array{0:string,1:list<mixed>} */
     private static function buildFilter(array $filters): array
     {
@@ -186,7 +289,38 @@ final class SharedCatalogService
             $where[] = 'decade = ?';
             $params[] = (int)$filters['decade'];
         }
+        // Curated discovery filters
+        if (($filters['tag'] ?? '') !== '') {
+            $where[] = 'id IN (SELECT shared_song_id FROM shared_song_tag_links tl JOIN shared_song_tags t ON t.id = tl.tag_id WHERE t.slug = ?)';
+            $params[] = (string)$filters['tag'];
+        }
+        if (($filters['source'] ?? '') !== '') {
+            $where[] = 'id IN (SELECT shared_song_id FROM shared_song_source_links sl JOIN shared_song_sources src ON src.id = sl.source_id WHERE src.slug = ?)';
+            $params[] = (string)$filters['source'];
+        }
+        if (($filters['station'] ?? '') !== '') {
+            $where[] = 'id IN (SELECT shared_song_id FROM shared_song_source_links sl JOIN shared_song_sources src ON src.id = sl.source_id WHERE src.station = ?)';
+            $params[] = (string)$filters['station'];
+        }
+        if (($filters['market'] ?? '') !== '') {
+            $where[] = 'id IN (SELECT shared_song_id FROM shared_song_source_links sl JOIN shared_song_sources src ON src.id = sl.source_id WHERE src.market = ?)';
+            $params[] = (string)$filters['market'];
+        }
+        if (($filters['karaoke_score_min'] ?? '') !== '') {
+            $where[] = 'karaoke_score >= ?';
+            $params[] = (int)$filters['karaoke_score_min'];
+        }
         return [implode(' AND ', $where), $params];
+    }
+
+    private static function buildOrder(array $filters): string
+    {
+        return match ($filters['sort'] ?? '') {
+            'karaoke'   => 'karaoke_score DESC, artist ASC, title ASC',
+            'source'    => 'source_score DESC, artist ASC, title ASC',
+            'nostalgia' => 'nostalgia_score DESC, artist ASC, title ASC',
+            default     => 'artist ASC, title ASC',
+        };
     }
 
     /** @param array<string,mixed> $row @return array<string,mixed> */

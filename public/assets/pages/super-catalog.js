@@ -140,12 +140,13 @@ let sharedObserver = null;
 
 function sharedRowsHtml(songs) {
   return songs.map(song => `
-    <tr data-shared-row="${song.id}">
+    <tr data-shared-row="${song.id}" tabindex="0" role="button" style="cursor:pointer">
       <td><strong>${escapeHtml(song.title)}</strong></td>
       <td>${escapeHtml(song.artist)}</td>
       <td>${escapeHtml(song.year || '')}</td>
-      <td>${escapeHtml(song.genre || '')}</td>
-      <td>${escapeHtml(Array.isArray(song.languages) ? song.languages.join(', ') : (song.languages || ''))}</td>
+      <td>${escapeHtml(song.genre || song.primary_genre || '')}</td>
+      <td>${escapeHtml(song.karaoke_score || 0)}</td>
+      <td>${escapeHtml(song.source_count || '')}</td>
       <td class="row-actions"><button type="button" class="link danger" data-shared-delete="${song.id}">Remove</button></td>
     </tr>
   `).join('');
@@ -184,8 +185,10 @@ async function loadSharedCatalog(reset = true) {
   setSharedStatus('Loading…');
 
   const query = $('[data-shared-query]')?.value || '';
+  const tag   = $('[data-shared-tag]')?.value  || '';
+  const sort  = $('[data-shared-sort]')?.value || '';
   try {
-    const params = new URLSearchParams({ query, page: sharedState.page, size: sharedState.size });
+    const params = new URLSearchParams({ query, tag, sort, page: sharedState.page, size: sharedState.size });
     const data = await api(`/api/super/catalog?${params.toString()}`);
     sharedState.total = data.total || 0;
     const songs = data.songs || [];
@@ -304,6 +307,157 @@ async function streamSharedImport(form) {
   if (fill) fill.style.width = '100%';
   if (status) status.textContent = lastEvent?.done ? 'Import complete.' : 'Import finished.';
   await loadSharedCatalog(true);
+}
+
+/* ---------- Catalog tabs ---------- */
+
+function initCatalogTabs() {
+  const tabs = $$('[data-tab]');
+  if (!tabs.length) return;
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const panelId = tab.dataset.tab;
+      tabs.forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      $$('[data-tab-panel]').forEach(p => { p.hidden = p.dataset.tabPanel !== panelId; });
+      if (panelId === 'sources') loadSourcesTab();
+      if (panelId === 'runs')    loadRunsTab();
+    });
+  });
+}
+
+async function loadSourcesTab() {
+  const srcRows = $('[data-sources-rows]');
+  const lstRows = $('[data-lists-rows]');
+  const meta    = $('[data-sources-meta]');
+  if (!srcRows) return;
+  try {
+    const [srcData, lstData] = await Promise.all([
+      api('/api/super/catalog/sources'),
+      api('/api/super/catalog/source-lists'),
+    ]);
+    const sources = srcData.sources || [];
+    const lists   = lstData.lists   || [];
+
+    if (meta) meta.textContent = `${sources.length} source(s), ${lists.length} list(s)`;
+
+    // Count lists per source
+    const listCounts = {};
+    lists.forEach(l => { listCounts[l.source_id] = (listCounts[l.source_id] || 0) + 1; });
+
+    srcRows.innerHTML = sources.length
+      ? sources.map(s => `
+          <tr>
+            <td><strong>${escapeHtml(s.name)}</strong><div class="muted">${escapeHtml(s.slug)}</div></td>
+            <td>${escapeHtml(s.source_type)}</td>
+            <td>${escapeHtml(s.station || '—')}</td>
+            <td>${escapeHtml(s.market  || '—')}</td>
+            <td>${escapeHtml(listCounts[s.id] || 0)}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="5" class="muted">No sources imported yet.</td></tr>';
+
+    lstRows.innerHTML = lists.length
+      ? lists.map(l => `
+          <tr>
+            <td><strong>${escapeHtml(l.title)}</strong></td>
+            <td>${escapeHtml(l.source_name || l.source_slug || '?')}</td>
+            <td>${escapeHtml(l.year || '—')}</td>
+            <td>${escapeHtml(l.list_type)}</td>
+            <td>${escapeHtml(l.fetched_at ? l.fetched_at.slice(0,10) : '—')}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="5" class="muted">No lists imported yet.</td></tr>';
+  } catch (e) {
+    srcRows.innerHTML = `<tr><td colspan="5">${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+async function loadRunsTab() {
+  const rows = $('[data-runs-rows]');
+  const meta = $('[data-runs-meta]');
+  if (!rows) return;
+  try {
+    const data = await api('/api/super/catalog/import-runs');
+    const runs = data.runs || [];
+    if (meta) meta.textContent = `${runs.length} import run(s)`;
+    rows.innerHTML = runs.length
+      ? runs.map(r => `
+          <tr>
+            <td>${escapeHtml(r.source_slug)}</td>
+            <td><span class="badge status-${escapeHtml(r.status)}">${escapeHtml(r.status)}</span></td>
+            <td>${escapeHtml((r.started_at || '').slice(0,16))}</td>
+            <td>${escapeHtml(r.total_seen)}</td>
+            <td>${escapeHtml(r.total_created)}</td>
+            <td>${escapeHtml(r.total_matched)}</td>
+            <td>${escapeHtml(r.total_skipped)}</td>
+            <td>${escapeHtml(r.total_needs_review)}</td>
+            <td>${r.report_path ? `<a href="#" data-run-report="${r.id}" title="View report">HTML</a>` : '—'}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="9" class="muted">No import runs yet.</td></tr>';
+  } catch (e) {
+    rows.innerHTML = `<tr><td colspan="9">${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+/* ---------- Song detail drawer ---------- */
+
+async function openSongDrawer(songId) {
+  const drawer = $('[data-song-drawer]');
+  const body   = $('[data-song-drawer-body]');
+  const title  = $('[data-drawer-song-title]');
+  if (!drawer || !body) return;
+  body.innerHTML = '<p class="muted">Loading…</p>';
+  drawer.hidden = false;
+  requestAnimationFrame(() => drawer.classList.add('open'));
+  document.body.classList.add('drawer-open');
+
+  try {
+    const data = await api(`/api/super/catalog/${songId}/metadata`);
+    const s = data.song || {};
+    if (title) title.textContent = `${s.title || ''} — ${s.artist || ''}`;
+
+    const tags = (s.discovery_tags_detail || []).map(t =>
+      `<span class="badge" title="${escapeHtml(t.source + ' ' + t.confidence + '%')}">${escapeHtml(t.name)}</span>`
+    ).join(' ');
+
+    const appearances = (s.source_appearances || []).map(a =>
+      `<li>${escapeHtml(a.list_title || a.list_slug)} <span class="muted">${escapeHtml(a.station || a.source_name || '')}${a.link_year ? ' ' + a.link_year : ''}${a.rank ? ' #' + a.rank : ''}</span></li>`
+    ).join('');
+
+    body.innerHTML = `
+      <div class="song-meta-grid">
+        <dl>
+          <dt>Year</dt><dd>${escapeHtml(s.year || '—')}</dd>
+          <dt>Genre</dt><dd>${escapeHtml(s.genre || s.primary_genre || '—')}</dd>
+          <dt>Karaoke score</dt><dd>${escapeHtml(s.karaoke_score || 0)}</dd>
+          <dt>Source score</dt><dd>${escapeHtml(s.source_score || 0)}</dd>
+          <dt>Nostalgia score</dt><dd>${escapeHtml(s.nostalgia_score || 0)}</dd>
+          <dt>Singalong score</dt><dd>${escapeHtml(s.singalong_score || 0)}</dd>
+          <dt>Crowd score</dt><dd>${escapeHtml(s.crowd_score || 0)}</dd>
+        </dl>
+        <div>
+          <h4>Discovery tags</h4>
+          <div class="tag-chips">${tags || '<span class="muted">No tags yet.</span>'}</div>
+          <h4 style="margin-top:.8rem">Source appearances</h4>
+          <ul class="source-appearances">${appearances || '<li class="muted">None recorded.</li>'}</ul>
+          ${s.curator_notes ? `<h4 style="margin-top:.8rem">Curator notes</h4><p>${escapeHtml(s.curator_notes)}</p>` : ''}
+        </div>
+      </div>
+      <div class="song-card-actions" style="margin-top:1rem">
+        <button type="button" class="link" data-song-drawer-close>Close</button>
+      </div>
+    `;
+  } catch (e) {
+    body.innerHTML = `<p>${escapeHtml(e.message)}</p>`;
+  }
+}
+
+function closeSongDrawer() {
+  const drawer = $('[data-song-drawer]');
+  if (!drawer) return;
+  drawer.classList.remove('open');
+  document.body.classList.remove('drawer-open');
+  setTimeout(() => { drawer.hidden = true; }, 220);
 }
 
 /* ---------- Init ---------- */
@@ -503,9 +657,55 @@ export function init() {
     await streamSharedImport(event.target);
   });
 
+  // Recalculate scores button
+  $('[data-recalculate-scores]')?.addEventListener('click', async () => {
+    const btn = $('[data-recalculate-scores]');
+    const status = $('[data-status]');
+    try {
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = 'Recalculating…';
+      const data = await api('/api/super/catalog/recalculate-scores', { method: 'POST', body: JSON.stringify({}) });
+      if (status) status.textContent = `Updated ${data.updated || 0} songs.`;
+      await loadSharedCatalog(true);
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+
+  // Shared catalog tag/sort filter wiring
+  $('[data-shared-tag]')?.addEventListener('change', () => loadSharedCatalog(true));
+  $('[data-shared-sort]')?.addEventListener('change', () => loadSharedCatalog(true));
+
+  // Song metadata drawer
+  $('[data-shared-rows]')?.addEventListener('click', event => {
+    const row = event.target.closest('[data-shared-row]');
+    const del = event.target.closest('[data-shared-delete]');
+    if (del) return; // handled by existing delegation below
+    if (row) openSongDrawer(row.dataset.sharedRow);
+  });
+  $('[data-shared-rows]')?.addEventListener('keydown', event => {
+    const row = event.target.closest('[data-shared-row]');
+    if (row && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      openSongDrawer(row.dataset.sharedRow);
+    }
+  });
+  document.addEventListener('click', event => {
+    if (event.target.closest('[data-song-drawer-close]')) closeSongDrawer();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      const d = $('[data-song-drawer]');
+      if (d && !d.hidden) closeSongDrawer();
+    }
+  });
+
   // Initial paint.
   loadTenants();
   if (appConfig.page === 'super-catalog') {
+    initCatalogTabs();
     loadSharedCatalog(true).then(setupSharedObserver);
   }
 }

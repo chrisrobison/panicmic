@@ -7,6 +7,24 @@
       <p class="muted catalog-help" data-catalog-help>Browse the full catalog. Selections from this page are stored locally and used when you return to request a song.</p>
     </div>
   </header>
+
+  <!-- Discovery browse chips -->
+  <div class="catalog-chips" aria-label="Browse by category">
+    <button class="chip" type="button" data-tag-chip="" aria-pressed="false">All</button>
+    <button class="chip" type="button" data-tag-chip="songs-everyone-knows" aria-pressed="false">Songs Everyone Knows</button>
+    <button class="chip" type="button" data-tag-chip="beginner-friendly" aria-pressed="false">Beginner Friendly</button>
+    <button class="chip" type="button" data-tag-chip="crowd-favorite" aria-pressed="false">Crowd Favorites</button>
+    <button class="chip" type="button" data-tag-chip="power-ballad" aria-pressed="false">Power Ballads</button>
+    <button class="chip" type="button" data-tag-chip="guilty-pleasure" aria-pressed="false">Guilty Pleasures</button>
+    <button class="chip" type="button" data-tag-chip="duet" aria-pressed="false">Duets</button>
+    <button class="chip" type="button" data-tag-chip="live105-classic" aria-pressed="false">Live 105 Classics</button>
+    <button class="chip" type="button" data-tag-chip="bay-area-nostalgia" aria-pressed="false">Bay Area</button>
+    <button class="chip" type="button" data-tag-chip="1980s" aria-pressed="false">80s</button>
+    <button class="chip" type="button" data-tag-chip="1990s" aria-pressed="false">90s</button>
+    <button class="chip" type="button" data-tag-chip="punk-ish-singalong" aria-pressed="false">Punk-ish</button>
+    <button class="chip" type="button" data-tag-chip="kj-panic-pick" aria-pressed="false">KJ Picks</button>
+  </div>
+
   <div class="catalog-toolbar">
     <input data-song-query placeholder="Search title or artist">
     <select data-song-genre>

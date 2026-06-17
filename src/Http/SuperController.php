@@ -7,6 +7,10 @@ namespace PanicMic\Http;
 use PanicMic\Auth\Auth;
 use PanicMic\Database\Connection;
 use PanicMic\Services\BillingService;
+use PanicMic\Services\CatalogReportService;
+use PanicMic\Services\CatalogScoringService;
+use PanicMic\Services\CatalogSourceService;
+use PanicMic\Services\CatalogTaggingService;
 use PanicMic\Services\ContentService;
 use PanicMic\Services\LastfmService;
 use PanicMic\Services\SharedCatalogService;
@@ -108,6 +112,64 @@ final class SuperController
         if (preg_match('#^/api/super/catalog/(\d+)$#', $path, $m) && $method === 'DELETE') {
             SharedCatalogService::delete($db, (int)$m[1]);
             Response::json(['ok' => true]);
+        }
+        // Curated catalog discovery endpoints
+        if ($path === '/api/super/catalog/sources' && $method === 'GET') {
+            Response::json(['sources' => CatalogSourceService::allSources($db)]);
+        }
+        if ($path === '/api/super/catalog/source-lists' && $method === 'GET') {
+            Response::json(['lists' => CatalogSourceService::allLists($db)]);
+        }
+        if ($path === '/api/super/catalog/tags' && $method === 'GET') {
+            Response::json(['tags' => CatalogTaggingService::allTags($db)]);
+        }
+        if ($path === '/api/super/catalog/import-runs' && $method === 'GET') {
+            Response::json(['runs' => CatalogSourceService::recentRuns($db, 50)]);
+        }
+        if (preg_match('#^/api/super/catalog/import-runs/(\d+)$#', $path, $m) && $method === 'GET') {
+            $run = CatalogSourceService::getRun($db, (int)$m[1]);
+            if (!$run) {
+                Response::json(['error' => 'Not found'], 404);
+            }
+            $warnings = CatalogSourceService::warningsForRun($db, (int)$m[1]);
+            Response::json(['run' => $run, 'warnings' => $warnings]);
+        }
+        if ($path === '/api/super/catalog/import-curated' && $method === 'POST') {
+            self::importCuratedCatalog($db);
+        }
+        if ($path === '/api/super/catalog/recalculate-scores' && $method === 'POST') {
+            self::recalculateScores($db);
+        }
+        if (preg_match('#^/api/super/catalog/(\d+)/metadata$#', $path, $m) && $method === 'GET') {
+            $meta = SharedCatalogService::metadata($db, (int)$m[1]);
+            if (!$meta) {
+                Response::json(['error' => 'Not found'], 404);
+            }
+            Response::json(['song' => $meta]);
+        }
+        if (preg_match('#^/api/super/catalog/(\d+)/tags$#', $path, $m) && $method === 'POST') {
+            $input = Request::input();
+            $tagSlug = trim((string)($input['tag_slug'] ?? ''));
+            $confidence = (int)($input['confidence'] ?? 100);
+            $source = (string)($input['source'] ?? 'admin');
+            if ($tagSlug === '') {
+                Response::json(['error' => 'tag_slug required'], 400);
+            }
+            $tagId = CatalogTaggingService::tagId($db, $tagSlug);
+            if (!$tagId) {
+                Response::json(['error' => 'Unknown tag slug'], 400);
+            }
+            CatalogTaggingService::applyTag($db, (int)$m[1], $tagId, $confidence, $source);
+            Response::json(['ok' => true, 'tags' => CatalogTaggingService::tagsForSong($db, (int)$m[1])]);
+        }
+        if (preg_match('#^/api/super/catalog/(\d+)/tags/(\d+)$#', $path, $m) && $method === 'DELETE') {
+            CatalogTaggingService::removeTag($db, (int)$m[1], (int)$m[2]);
+            Response::json(['ok' => true]);
+        }
+        if (preg_match('#^/api/super/catalog/(\d+)/curation$#', $path, $m) && $method === 'PATCH') {
+            $input = Request::input();
+            SharedCatalogService::patchCuration($db, (int)$m[1], $input);
+            Response::json(['song' => SharedCatalogService::find($db, (int)$m[1])]);
         }
         if ($path === '/api/super/plans' && $method === 'GET') {
             Response::json(['plans' => BillingService::plans($db)]);
@@ -351,6 +413,78 @@ final class SuperController
         fclose($handle);
         echo json_encode(['seen' => $seen, 'imported' => $imported, 'skipped' => $skipped, 'done' => true]) . "\n";
         exit;
+    }
+
+    /**
+     * Upload a CSV and run the curated import via streaming NDJSON.
+     * Supports both the legacy semicolon CSV and the richer curated format.
+     */
+    private static function importCuratedCatalog(PDO $superDb): never
+    {
+        @set_time_limit(0);
+        @ignore_user_abort(true);
+
+        if (empty($_FILES['file']) || ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            Response::json(['error' => 'Upload failed or no file attached'], 400);
+        }
+
+        $tmp = (string)$_FILES['file']['tmp_name'];
+        $origName = (string)($_FILES['file']['name'] ?? 'upload.csv');
+        $isJson = str_ends_with(strtolower($origName), '.json');
+
+        // Save to a named temp file so adapters can read it
+        $tmpNamed = sys_get_temp_dir() . '/panicmic-import-' . uniqid('', true) . ($isJson ? '.json' : '.csv');
+        if (!move_uploaded_file($tmp, $tmpNamed)) {
+            Response::json(['error' => 'Could not move uploaded file'], 500);
+        }
+
+        header('Content-Type: application/x-ndjson; charset=utf-8');
+        header('Cache-Control: no-cache');
+        header('X-Accel-Buffering: no');
+
+        $root = dirname(__DIR__, 2);
+
+        try {
+            if ($isJson) {
+                $lists = [['file' => $tmpNamed, 'source_name' => 'Manual Upload', 'source_slug' => 'manual-kj',
+                           'source_type' => 'manual', 'list_title' => $origName,
+                           'list_slug' => 'upload-' . substr(md5($origName), 0, 8), 'list_type' => 'manual']];
+                $adapter = new \PanicMic\Services\CatalogImport\ManualJsonAdapter($lists, $root);
+            } else {
+                $lists = [['file' => $tmpNamed, 'source_name' => 'Manual Upload', 'source_slug' => 'manual-kj',
+                           'source_type' => 'manual', 'list_title' => $origName,
+                           'list_slug' => 'upload-' . substr(md5($origName), 0, 8), 'list_type' => 'manual',
+                           'parser' => ['delimiter' => ';']]];
+                $adapter = new \PanicMic\Services\CatalogImport\ManualCsvAdapter($lists, $root);
+            }
+
+            $importer = new \PanicMic\Services\CatalogImportService($superDb, $root, false, false);
+            $stats = $importer->run($adapter);
+
+            echo json_encode([
+                'seen'     => $stats['seen']     ?? 0,
+                'imported' => $stats['imported'] ?? 0,
+                'created'  => $stats['created']  ?? 0,
+                'matched'  => $stats['matched']  ?? 0,
+                'skipped'  => $stats['skipped']  ?? 0,
+                'done'     => true,
+            ]) . "\n";
+        } catch (\Throwable $e) {
+            echo json_encode(['error' => $e->getMessage()]) . "\n";
+        } finally {
+            @unlink($tmpNamed);
+        }
+        exit;
+    }
+
+    private static function recalculateScores(PDO $superDb): never
+    {
+        @set_time_limit(0);
+        $root = dirname(__DIR__, 2);
+        $configPath = $root . '/config/catalog-scoring.php';
+        $config = is_readable($configPath) ? (require $configPath) : [];
+        $count = CatalogScoringService::recalculateAll($superDb, $config);
+        Response::json(['updated' => $count]);
     }
 
     private static function exportSharedCatalog(PDO $superDb): never
