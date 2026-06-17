@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace PanicMic\Http;
 
 use PanicMic\Auth\Auth;
+use PanicMic\Services\AlbumArtService;
 use PanicMic\Services\EventBus;
+use PanicMic\Services\LastfmService;
 use PanicMic\Services\SongService;
 use PanicMic\Services\YouTubeService;
 use PanicMic\Support\Request;
@@ -102,6 +104,85 @@ final class SongController
             'skipped' => $result['skipped'] + $skippedNoArtist,
             'total_seen' => count($rows) + $skippedNoArtist,
         ]);
+    }
+
+    /**
+     * Look up album art for a song via Last.fm, download it, cache it
+     * locally under content/{slug}/album-art/, and update the DB record.
+     *
+     * POST /api/admin/songs/{id}/fetch-album-art
+     *
+     * @param array<string,mixed> $tenant
+     */
+    public static function fetchAlbumArt(PDO $db, array $tenant, int $songId): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+
+        $song = SongService::find($db, $songId);
+        if (!$song) {
+            Response::json(['error' => 'Song not found'], 404);
+        }
+
+        if (!LastfmService::isEnabled()) {
+            Response::json(['error' => 'Last.fm API key is not configured (set LASTFM_API_KEY in .env)'], 400);
+        }
+
+        $url = AlbumArtService::fetch(
+            (string)$tenant['slug'],
+            (string)$song['artist'],
+            (string)$song['title']
+        );
+
+        if (!$url) {
+            Response::json([
+                'error' => LastfmService::lastError() ?? 'No album art found for this track',
+            ], 404);
+        }
+
+        SongService::setAlbumArt($db, $songId, $url);
+        EventBus::publish($db, 'song:updated', ['songId' => $songId]);
+        Response::json(['album_art_url' => $url]);
+    }
+
+    /**
+     * Accept a remote image URL (e.g. from the Spotify-backed album-art JS
+     * library on the frontend), download it, cache it locally, and update
+     * the DB record.
+     *
+     * POST /api/admin/songs/{id}/cache-album-art-url
+     * Body: { "url": "https://…" }
+     *
+     * @param array<string,mixed> $tenant
+     */
+    public static function cacheAlbumArtUrl(PDO $db, array $tenant, int $songId): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+
+        $song = SongService::find($db, $songId);
+        if (!$song) {
+            Response::json(['error' => 'Song not found'], 404);
+        }
+
+        $input = Request::input();
+        $remoteUrl = trim((string)($input['url'] ?? ''));
+        if (!filter_var($remoteUrl, FILTER_VALIDATE_URL)) {
+            Response::json(['error' => 'A valid image URL is required'], 400);
+        }
+
+        $url = AlbumArtService::cacheRemoteUrl(
+            (string)$tenant['slug'],
+            (string)$song['artist'],
+            (string)$song['title'],
+            $remoteUrl
+        );
+
+        if (!$url) {
+            Response::json(['error' => 'Failed to download or cache the image from the provided URL'], 502);
+        }
+
+        SongService::setAlbumArt($db, $songId, $url);
+        EventBus::publish($db, 'song:updated', ['songId' => $songId]);
+        Response::json(['album_art_url' => $url]);
     }
 
     /** @param array<string,mixed> $tenant */

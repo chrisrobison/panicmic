@@ -141,10 +141,18 @@ h1, h2, p { margin-top: 0; }
 .youtube-link { color: var(--accent); font-weight: 700; display: inline-block; margin-top: 6px; }
 .muted { color: var(--muted); }
 .song-catalog-editor { display: grid; gap: 14px; }
+.song-card-header { display: flex; align-items: center; gap: 14px; padding-bottom: 4px; }
+.song-card-header-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.song-card-header-text strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .song-editor-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .song-card-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .song-card-actions button { width: auto; min-width: 120px; }
 .song-card-actions a { color: var(--accent); font-weight: 700; }
+/* Album art URL label spans both columns; the input + button sit side-by-side */
+.album-art-label { grid-column: 1 / -1; }
+.album-art-field { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+.album-art-field input { flex: 1 1 auto; min-width: 0; }
+.album-art-field button { flex: 0 0 auto; width: auto; white-space: nowrap; }
 .song-result.selected { border-color: var(--primary); }
 .queue-strip, .workspace { padding: 32px max(18px, 6vw); }
 .workspace.narrow { max-width: 760px; margin: 0 auto; }
@@ -932,6 +940,7 @@ button.link.danger:hover { color: #fca5a5; }
   background: var(--surface-2);
 }
 .album-art--sm { width: 40px; height: 40px; border-radius: 5px; }
+.album-art--md { width: 64px; height: 64px; border-radius: 8px; }
 .album-art--micro { width: 26px; height: 26px; border-radius: 4px; vertical-align: middle; margin-right: 6px; }
 .album-art--now {
   display: block;

@@ -72,6 +72,10 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
     <?php require __DIR__ . "/pages/{$page}.php"; ?>
   </main>
   <script src="<?= e(Url::path('/assets/vendor/geopattern.min.js')) ?>"></script>
+<?php if ($page === 'admin-songs'): ?>
+  <!-- album-art: Spotify-backed cover lookup used by the "Fetch Art" button in the song editor -->
+  <script src="https://cdn.jsdelivr.net/npm/album-art/index.min.js"></script>
+<?php endif; ?>
   <script type="module" src="<?= e(Url::path('/assets/main.js')) ?>"></script>
 </body>
 </html>

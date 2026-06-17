@@ -128,6 +128,16 @@ final class SongService
         $db->prepare('UPDATE songs SET is_active = 0 WHERE id = ?')->execute([$songId]);
     }
 
+    /**
+     * Overwrite only the album_art_url column for a single song.
+     * Used by the album-art fetch endpoints so they don't have to
+     * re-supply all other fields.
+     */
+    public static function setAlbumArt(PDO $db, int $songId, string $url): void
+    {
+        $db->prepare('UPDATE songs SET album_art_url = ? WHERE id = ?')->execute([$url, $songId]);
+    }
+
     /** @return array<string,mixed>|null */
     public static function find(PDO $db, int $id): ?array
     {

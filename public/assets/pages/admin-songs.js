@@ -3,8 +3,12 @@
 import { $, setStatus, formData } from '../lib/dom.js';
 import { api } from '../lib/api.js';
 import { searchSongs, catalogState } from '../lib/catalog.js';
+import { installCoverFallback } from '../lib/albumArt.js';
 
 export function init() {
+  // Ensure broken hotlinked covers swap to their generated fallbacks.
+  installCoverFallback();
+
   // Catalog search wiring (filter dropdowns + pagination + debounced query).
   const queryInput = $('[data-song-query]') || $('[name="song_search"]');
   let queryDebounce = null;
@@ -76,6 +80,77 @@ export function init() {
       form.reset();
       await searchSongs(true);
     } catch (error) { setStatus(status, error.message); }
+  });
+
+  // Fetch album art for a song (click-delegated).
+  //
+  // Strategy:
+  //   1. Try the Spotify-backed album-art JS library (loaded from CDN as
+  //      window.albumArt). If it returns a URL, POST it to cache-album-art-url
+  //      so the server downloads and stores a local copy.
+  //   2. If the CDN library is unavailable or returns nothing, fall back to the
+  //      backend Last.fm lookup via fetch-album-art.
+  //
+  // Either way the response contains the new local /files/… URL which we write
+  // into the album_art_url input and use to update the preview thumbnail.
+  document.addEventListener('click', async event => {
+    const fetchBtn = event.target.closest('[data-fetch-art]');
+    if (!fetchBtn) return;
+    event.preventDefault();
+
+    const songId   = fetchBtn.dataset.fetchArt;
+    const artist   = fetchBtn.dataset.songArtist;
+    const title    = fetchBtn.dataset.songTitle;
+    const album    = fetchBtn.dataset.songAlbum;
+    const form     = fetchBtn.closest('[data-song-update]');
+    const urlInput = form?.querySelector('[name="album_art_url"]');
+    const coverImg = form?.querySelector('.song-card-art');
+    const status   = form ? $('[data-status]', form) : null;
+
+    fetchBtn.disabled = true;
+    if (status) setStatus(status, 'Fetching album art…');
+
+    try {
+      let data;
+
+      // Try Spotify (album-art CDN library) first.
+      const albumArtLib = /** @type {Function|undefined} */ (window.albumArt);
+      if (typeof albumArtLib === 'function') {
+        let spotifyUrl = null;
+        try {
+          const opts = album ? { album } : {};
+          spotifyUrl = await albumArtLib(artist, opts);
+        } catch (_) {
+          spotifyUrl = null;
+        }
+
+        if (spotifyUrl) {
+          data = await api(`/api/admin/songs/${songId}/cache-album-art-url`, {
+            method: 'POST',
+            body: JSON.stringify({ url: spotifyUrl }),
+          });
+        }
+      }
+
+      // Fall back to backend Last.fm lookup if Spotify gave nothing.
+      if (!data) {
+        data = await api(`/api/admin/songs/${songId}/fetch-album-art`, { method: 'POST' });
+      }
+
+      // Update the UI with the newly cached local URL.
+      if (data?.album_art_url) {
+        if (urlInput) urlInput.value = data.album_art_url;
+        if (coverImg) {
+          coverImg.src = data.album_art_url;
+          delete coverImg.dataset.coverFallback; // clear old fallback so it won't revert
+        }
+        if (status) setStatus(status, 'Album art fetched and cached locally.');
+      }
+    } catch (error) {
+      if (status) setStatus(status, `Could not fetch art: ${error.message}`);
+    } finally {
+      fetchBtn.disabled = false;
+    }
   });
 
   searchSongs(true).catch(() => {});

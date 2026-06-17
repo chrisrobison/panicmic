@@ -132,11 +132,28 @@ function providerOptions(selected) {
 function adminSongCard(song) {
   return `
     <form class="song-card song-catalog-editor" data-song-update="${song.id}">
+      <div class="song-card-header">
+        ${coverMarkup(song, 'album-art album-art--md song-card-art')}
+        <div class="song-card-header-text">
+          <strong>${escapeHtml(song.title)}</strong>
+          <span class="muted">${escapeHtml(song.artist)}</span>
+        </div>
+      </div>
       <div class="song-editor-grid">
         <label>Title<input name="title" value="${escapeHtml(song.title)}" required></label>
         <label>Artist<input name="artist" value="${escapeHtml(song.artist)}" required></label>
         <label>Album<input name="album" value="${escapeHtml(song.album || '')}"></label>
-        <label>Album art URL<input name="album_art_url" value="${escapeHtml(song.album_art_url || '')}" placeholder="https://… or /files/…"></label>
+        <label class="album-art-label">Album art URL
+          <div class="album-art-field">
+            <input name="album_art_url" value="${escapeHtml(song.album_art_url || '')}" placeholder="https://… or /files/…">
+            <button type="button" class="secondary"
+                    data-fetch-art="${song.id}"
+                    data-song-artist="${escapeHtml(song.artist)}"
+                    data-song-title="${escapeHtml(song.title)}"
+                    data-song-album="${escapeHtml(song.album || '')}"
+                    title="Look up album art via Spotify / Last.fm and cache a local copy">Fetch Art</button>
+          </div>
+        </label>
         <label>Genre<input name="genre" value="${escapeHtml(song.genre || '')}"></label>
         <label>Decade<input name="decade" type="number" min="1900" max="2090" step="10" value="${escapeHtml(song.decade || '')}"></label>
         <label>Popularity<input name="popularity" type="number" min="0" value="${escapeHtml(song.popularity || 0)}"></label>

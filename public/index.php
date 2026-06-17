@@ -321,6 +321,8 @@ try {
         $path === '/api/admin/songs/export' && $method === 'GET' => SongController::exportCatalog($db, $tenant),
         (bool)preg_match('#^/api/admin/songs/(\d+)$#', $path, $m) && $method === 'PATCH' => SongController::update($db, $tenant, (int)$m[1]),
         (bool)preg_match('#^/api/admin/songs/(\d+)$#', $path, $m) && $method === 'DELETE' => SongController::delete($db, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/songs/(\d+)/fetch-album-art$#', $path, $m) && $method === 'POST' => SongController::fetchAlbumArt($db, $tenant, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/songs/(\d+)/cache-album-art-url$#', $path, $m) && $method === 'POST' => SongController::cacheAlbumArtUrl($db, $tenant, (int)$m[1]),
         $path === '/api/admin/content' && $method === 'GET' => ContentController::index($tenant),
         $path === '/api/admin/content' && $method === 'POST' => ContentController::upload($tenant),
 
