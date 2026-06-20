@@ -3,7 +3,7 @@
 import { $, $$, setStatus, formData } from '../lib/dom.js';
 import { api, appConfig } from '../lib/api.js';
 import { loadQueue } from '../lib/queue.js';
-import { searchSongs, catalogState } from '../lib/catalog.js';
+import { searchSongs, catalogState, initBrowseChips } from '../lib/catalog.js';
 import { startEvents } from '../lib/events.js';
 
 export function init() {
@@ -109,6 +109,7 @@ export function init() {
 
   // Catalog page (/songs): initial load, help (?) toggle, and infinite scroll.
   if (appConfig.page === 'songs') {
+    initBrowseChips();
     searchSongs(true).catch(() => {});
     setupCatalogHelpToggle();
     setupInfiniteScroll();
