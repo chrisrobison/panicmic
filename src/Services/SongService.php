@@ -11,9 +11,11 @@ final class SongService
     /** @param array<string,mixed> $filters @return array{songs:list<array<string,mixed>>,total:int,page:int,size:int} */
     public static function search(PDO $db, array $filters): array
     {
-        $size = min(200, max(10, (int)($filters['size'] ?? 50)));
+        $size = min(200, max(1, (int)($filters['size'] ?? 50)));
         $page = max(1, (int)($filters['page'] ?? 1));
-        $offset = ($page - 1) * $size;
+        // _offset lets callers supply a raw byte-offset instead of deriving it
+        // from page/size — used by blendedSearch for cross-source pagination.
+        $offset = isset($filters['_offset']) ? max(0, (int)$filters['_offset']) : ($page - 1) * $size;
 
         [$whereSql, $params] = self::buildFilter($filters);
         $order = ($filters['sort'] ?? '') === 'popularity'
@@ -43,28 +45,46 @@ final class SongService
      */
     public static function blendedSearch(PDO $tenantDb, PDO $superDb, array $filters): array
     {
-        $size = min(100, max(10, (int)($filters['size'] ?? 50)));
-        $page = max(1, (int)($filters['page'] ?? 1));
+        $size   = min(100, max(10, (int)($filters['size'] ?? 50)));
+        $page   = max(1, (int)($filters['page'] ?? 1));
+        $offset = ($page - 1) * $size;
 
-        // Pull capped pages from each source then merge.
-        $bucketFilters = $filters + ['page' => 1, 'size' => $size * $page];
-        $local = self::search($tenantDb, $bucketFilters);
-        $shared = SharedCatalogService::search($superDb, $bucketFilters);
+        // Cheap count-only queries to establish totals (1 row fetched each).
+        $localTotal  = self::search($tenantDb, array_merge($filters, ['_offset' => 0, 'size' => 1]))['total'];
+        $sharedTotal = SharedCatalogService::search($superDb, array_merge($filters, ['_offset' => 0, 'size' => 1]))['total'];
 
-        $merged = array_merge($local['songs'], $shared['songs']);
-        usort($merged, static function (array $a, array $b): int {
-            return strcmp((string)($a['artist'] ?? ''), (string)($b['artist'] ?? ''))
-                ?: strcmp((string)($a['title'] ?? ''), (string)($b['title'] ?? ''));
-        });
-        $slice = array_slice($merged, ($page - 1) * $size, $size);
+        // Local-first sequential layout: local songs occupy positions 0…localTotal-1,
+        // shared songs fill positions localTotal…(localTotal+sharedTotal-1).
+        // This gives stable, non-overlapping pages regardless of catalog size.
+        $localPageSongs   = max(0, min($size, $localTotal - $offset));
+        $sharedStartOffset = max(0, $offset - $localTotal);
+        $sharedPageSongs  = $size - $localPageSongs;
+
+        $songs = [];
+
+        if ($localPageSongs > 0) {
+            $localResult = self::search($tenantDb, array_merge($filters, [
+                '_offset' => $offset,
+                'size'    => $localPageSongs,
+            ]));
+            $songs = $localResult['songs'];
+        }
+
+        if ($sharedPageSongs > 0 && $sharedTotal > 0) {
+            $sharedResult = SharedCatalogService::search($superDb, array_merge($filters, [
+                '_offset' => $sharedStartOffset,
+                'size'    => $sharedPageSongs,
+            ]));
+            $songs = array_merge($songs, $sharedResult['songs']);
+        }
 
         return [
-            'songs' => $slice,
-            'total' => $local['total'] + $shared['total'],
-            'page' => $page,
-            'size' => $size,
-            'local_total' => $local['total'],
-            'shared_total' => $shared['total'],
+            'songs'        => $songs,
+            'total'        => $localTotal + $sharedTotal,
+            'page'         => $page,
+            'size'         => $size,
+            'local_total'  => $localTotal,
+            'shared_total' => $sharedTotal,
         ];
     }
 

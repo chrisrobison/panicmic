@@ -11,9 +11,11 @@ final class SharedCatalogService
     /** @param array<string,mixed> $filters @return array{songs:list<array<string,mixed>>,total:int,page:int,size:int} */
     public static function search(PDO $superDb, array $filters): array
     {
-        $size = min(200, max(10, (int)($filters['size'] ?? 50)));
+        $size = min(200, max(1, (int)($filters['size'] ?? 50)));
         $page = max(1, (int)($filters['page'] ?? 1));
-        $offset = ($page - 1) * $size;
+        // _offset lets callers supply a raw byte-offset instead of deriving it
+        // from page/size — used by blendedSearch for cross-source pagination.
+        $offset = isset($filters['_offset']) ? max(0, (int)$filters['_offset']) : ($page - 1) * $size;
 
         [$whereSql, $params] = self::buildFilter($filters);
         $countStmt = $superDb->prepare("SELECT COUNT(*) FROM shared_songs WHERE {$whereSql}");
