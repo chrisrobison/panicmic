@@ -105,7 +105,7 @@ final class WsManager
             return false;
         }
 
-        $php    = PHP_BINARY;
+        $php    = self::cliBinary();
         $script = dirname(__DIR__, 2) . '/scripts/ws-server.php';
 
         if (!is_file($script)) {
@@ -124,5 +124,36 @@ final class WsManager
 
         exec($cmd);
         return true;
+    }
+
+    /**
+     * Resolve a real PHP *CLI* binary to exec() the daemon with.
+     *
+     * PHP_BINARY is only the CLI interpreter when this code is itself
+     * running under the cli SAPI. Under php-fpm (the normal case — this
+     * runs from an ordinary page render), PHP_BINARY resolves to the
+     * php-fpm binary itself (e.g. /usr/sbin/php-fpm8.2). exec()-ing that
+     * against a script path doesn't run the script at all: php-fpm just
+     * tries to parse it as one of its own CLI flags, fails, and dumps its
+     * usage/help text to stderr (which is exactly what ends up in
+     * storage/logs/ws-server.log) — the daemon never actually starts, and
+     * every request silently "retries" this no-op forever.
+     */
+    private static function cliBinary(): string
+    {
+        $override = Env::get('PHP_CLI_BINARY');
+        if ($override && is_executable($override)) {
+            return $override;
+        }
+        if (PHP_SAPI === 'cli') {
+            return PHP_BINARY;
+        }
+        foreach (['/usr/local/bin/php', '/usr/bin/php', PHP_BINDIR . '/php'] as $candidate) {
+            if (is_executable($candidate)) {
+                return $candidate;
+            }
+        }
+        // Last resort: hope `php` resolves on PATH.
+        return 'php';
     }
 }
