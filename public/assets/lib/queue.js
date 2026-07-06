@@ -161,12 +161,17 @@ export function renderDisplay(queue, display = {}) {
     dq.innerHTML = activeQueue.slice(0, 10).map((item, idx) => {
       const isOnStage = item.queue_status === 'now_singing';
       const initials = singerInitials(item.singer_name);
-      const hue = singerHue(item.singer_name);
+      // Quantized into 12 fixed buckets (see .avatar-hue-N in app.css)
+      // instead of an inline style="background:hsl(...)" — the CSP
+      // style-src policy has no nonce/hash coverage for dynamic inline
+      // styles, so a bare inline color gets silently blocked by the
+      // browser and logs a CSP violation on every render.
+      const hueBucket = Math.floor(singerHue(item.singer_name) / 30);
       const posNum = idx + 1;
       const waitMin = isOnStage ? null : idx * AVG_MIN;
 
       return `<div class="display-singer-row">
-        <div class="display-singer-avatar" style="background:hsl(${hue},50%,36%)">${escapeHtml(initials)}</div>
+        <div class="display-singer-avatar avatar-hue-${hueBucket}">${escapeHtml(initials)}</div>
         <div class="display-singer-name">${escapeHtml(item.singer_name)}${isOnStage ? '<span class="display-badge-onstage">ON STAGE</span>' : ''}</div>
         <div class="display-singer-song">${escapeHtml(item.title)}</div>
         <div class="display-singer-meta">

@@ -343,6 +343,24 @@ h1, h2, p { margin-top: 0; }
   grid-row: 1 / span 2;
   align-self: center;
 }
+/* Fixed 12-bucket palette for singer avatars (30deg hue steps), matching
+   the hsl(h, 50%, 36%) formula previously applied as an inline style.
+   Kept as real classes rather than a JS-set inline style/CSS variable so
+   the CSP style-src policy (no 'unsafe-inline', no per-value hash) never
+   blocks it. */
+.avatar-hue-0  { background: hsl(0,   50%, 36%); }
+.avatar-hue-1  { background: hsl(30,  50%, 36%); }
+.avatar-hue-2  { background: hsl(60,  50%, 36%); }
+.avatar-hue-3  { background: hsl(90,  50%, 36%); }
+.avatar-hue-4  { background: hsl(120, 50%, 36%); }
+.avatar-hue-5  { background: hsl(150, 50%, 36%); }
+.avatar-hue-6  { background: hsl(180, 50%, 36%); }
+.avatar-hue-7  { background: hsl(210, 50%, 36%); }
+.avatar-hue-8  { background: hsl(240, 50%, 36%); }
+.avatar-hue-9  { background: hsl(270, 50%, 36%); }
+.avatar-hue-10 { background: hsl(300, 50%, 36%); }
+.avatar-hue-11 { background: hsl(330, 50%, 36%); }
+}
 .display-singer-name {
   font-size: 13px;
   font-weight: 700;
