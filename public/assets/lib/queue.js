@@ -19,7 +19,6 @@ const displayPlayer = {
   currentVideoId: null,
   ytPlayer: null,
   ytApiLoaded: false,
-  ytShouldUnmute: false,
   // WebSocket-synchronized playback state (additive; the short-poll path
   // never touches these and keeps using showYouTube/showSelfHostedVideo).
   provider: null,            // 'youtube' | 'self_hosted' | 'none'
@@ -335,10 +334,12 @@ export function cueDisplayPlayer(videoInfo, onReady) {
     if (!yt) { ready(); return; }
     yt.hidden = false;
     displayPlayer.currentVideoId = info.youtubeVideoId;
+    // Stashed here (rather than closed over) so the single onStateChange
+    // listener registered below always calls the *latest* cue's ready(),
+    // instead of accumulating a new listener per cue (each of which would
+    // keep firing forever since the player instance is reused across songs).
+    displayPlayer.onCued = ready;
     loadYouTubeApi(() => {
-      const onState = e => {
-        if (e.data === YT.PlayerState.CUED) ready();
-      };
       if (!displayPlayer.ytPlayer) {
         displayPlayer.ytPlayer = new YT.Player(yt, {
           height: '100%',
@@ -347,14 +348,15 @@ export function cueDisplayPlayer(videoInfo, onReady) {
           playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
           events: {
             onReady: e => { try { e.target.mute(); e.target.cueVideoById(info.youtubeVideoId); } catch (_) {} },
-            onStateChange: onState,
+            onStateChange: e => {
+              if (e.data === YT.PlayerState.CUED) { try { displayPlayer.onCued?.(); } catch (_) {} }
+            },
           },
         });
       } else {
         try {
           displayPlayer.ytPlayer.mute();
           displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
-          displayPlayer.ytPlayer.addEventListener('onStateChange', onState);
         } catch (_) { ready(); }
       }
     });
@@ -517,7 +519,8 @@ function showYouTube(videoId) {
   if (empty) empty.hidden = true;
   if (!yt) return;
   yt.hidden = false;
-  if (displayPlayer.currentVideoId === videoId) return;
+
+  const sameVideo = displayPlayer.currentVideoId === videoId;
   displayPlayer.currentVideoId = videoId;
 
   loadYouTubeApi(() => {
@@ -526,27 +529,38 @@ function showYouTube(videoId) {
         height: '100%',
         width: '100%',
         videoId,
+        // Display screens stay muted permanently — no sound is needed on
+        // the remote TV, and unmuting programmatically is what invites
+        // Chromium's autoplay policy to silently pause playback. Staying
+        // muted keeps autoplay/loadVideoById reliably allowed.
         playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
         events: {
-          // Autoplay muted on load to satisfy Chromium's autoplay policy.
-          onReady: e => { e.target.mute(); e.target.playVideo(); },
-          // Unmute only once the player has actually transitioned into
-          // PLAYING — calling unMute() before that triggers a browser
-          // autoplay block. This is the path PLAN.md Phase 5.2 calls
-          // out by name.
-          onStateChange: e => {
-            if (e.data === YT.PlayerState.PLAYING && displayPlayer.ytShouldUnmute) {
-              try { e.target.unMute(); } catch (_) {}
-              displayPlayer.ytShouldUnmute = false;
-            }
-          },
+          onReady: e => { try { e.target.mute(); e.target.playVideo(); } catch (_) {} },
         },
       });
-    } else {
-      displayPlayer.ytPlayer.loadVideoById(videoId);
-      displayPlayer.ytShouldUnmute = true;
+      return;
     }
-    displayPlayer.ytShouldUnmute = true;
+
+    if (sameVideo) {
+      // Same video the player already thinks it's showing. Normally a
+      // no-op, but if a WS "cue" (cueDisplayPlayer) landed for this same
+      // id and the follow-up "play" command was lost or delayed — e.g. on
+      // a flaky link to a remote display — the player can be sitting
+      // paused on the cued frame while this poll-driven path silently
+      // no-ops forever because the id already matches. Self-heal: if the
+      // player isn't actually playing/buffering, force it to play.
+      try {
+        const state = displayPlayer.ytPlayer.getPlayerState();
+        if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
+          displayPlayer.ytPlayer.mute();
+          displayPlayer.ytPlayer.playVideo();
+        }
+      } catch (_) {}
+      return;
+    }
+
+    try { displayPlayer.ytPlayer.mute(); } catch (_) {}
+    displayPlayer.ytPlayer.loadVideoById(videoId);
   });
 }
 
