@@ -9,14 +9,21 @@ $requestQr = QrCode::svg($requestUrl, 320);
 ?>
 <section class="display-shell" data-screen="<?= e($screenId) ?>">
 
-  <!-- Browsers block unmuted autoplay until the page has had a real user
-       gesture. Everything plays muted until this is tapped; one tap then
-       unlocks sound for every song for the rest of this page's life
+  <?php if ($screenId === 'main'): ?>
+  <!-- Only the KJ's own screen (the "main" display, plugged into the
+       venue's actual sound system) ever produces audio. Remote/auxiliary
+       screens (Side Screen, Bar TV, Patio TV, ...) stay muted permanently
+       — they're purely visual, and unmuting them would just create
+       duplicate/out-of-sync audio around the room. Browsers also block
+       unmuted autoplay until the page has had a real user gesture, so
+       even here everything plays muted until this is tapped; one tap
+       then unlocks sound for every song for the rest of this page's life
        (until it's reloaded). -->
   <button type="button" class="display-audio-unlock" data-display-audio-unlock>
     <span class="display-audio-unlock-icon">🔊</span>
     <span>Tap to enable sound</span>
   </button>
+  <?php endif; ?>
 
   <!-- Stage: left area (video + overlays) -->
   <div class="display-stage">
