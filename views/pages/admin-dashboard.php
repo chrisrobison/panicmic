@@ -97,7 +97,7 @@ $dashboardQr = QrCode::svg($singerUrl, 96);
         <div class="panel crowd-preview">
           <div class="panel-head"><h2>Crowd Display Preview</h2><span class="live-dot">● LIVE</span></div>
           <div class="crowd-preview-frame">
-            <iframe src="<?= e(Url::path('/display?screen=main')) ?>" title="Crowd display preview" loading="lazy" tabindex="-1"></iframe>
+            <iframe src="<?= e(Url::path('/display?screen=main')) ?>" title="Crowd display preview" loading="lazy" tabindex="-1" allow="autoplay"></iframe>
           </div>
         </div>
 
