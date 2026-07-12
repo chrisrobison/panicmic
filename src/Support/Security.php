@@ -46,7 +46,9 @@ final class Security
              . "connect-src 'self'; "
              . "img-src 'self' data: https:; "
              . "style-src 'self' 'nonce-{$nonce}'; "
-             . "frame-src https://www.youtube.com https://www.youtube-nocookie.com; "
+             // 'self' lets the KJ dashboard embed /display in an iframe for
+             // the live Crowd Display Preview panel.
+             . "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; "
              . "object-src 'none'";
         header('Content-Security-Policy: ' . $csp);
     }
