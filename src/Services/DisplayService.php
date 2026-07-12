@@ -25,6 +25,7 @@ final class DisplayService
             "SELECT ds.*, sr.id request_id, singers.display_name singer_name,
                     songs.title, songs.artist,
                     sr.youtube_video_id, sr.youtube_url, sr.youtube_title, sr.manual_video_url,
+                    sr.cached_video_status, sr.cached_video_path,
                     songs.video_url AS song_video_url, songs.video_provider, songs.provider_url,
                     a.message announcement
              FROM display_state ds

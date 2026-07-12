@@ -73,12 +73,20 @@ export function renderPublicQueue(queue) {
   });
 }
 
+/** Small suffix noting local-mirror cache state, appended after the main source link/badge. */
+function cacheStatusMarkup(item) {
+  if (item.cached_video_status === 'ready') return ' <small class="cache-badge cache-ready" title="Playing from a local copy instead of the YouTube embed">⬇ cached</small>';
+  if (item.cached_video_status === 'pending') return ' <small class="cache-badge cache-pending" title="Mirroring the video locally in the background">⏳ caching…</small>';
+  if (item.cached_video_status === 'failed') return ' <small class="cache-badge cache-failed" title="Local mirror failed — falling back to the YouTube embed">⚠ cache failed</small>';
+  return '';
+}
+
 function renderQueueItemSource(item) {
   if (item.manual_video_url) {
-    return `<a class="provider-link" href="${escapeHtml(item.manual_video_url)}" target="_blank" rel="noreferrer">↗ Linked video</a>`;
+    return `<a class="provider-link" href="${escapeHtml(item.manual_video_url)}" target="_blank" rel="noreferrer">↗ Linked video</a>${cacheStatusMarkup(item)}`;
   }
   if (item.youtube_url) {
-    return `<a class="youtube-link" href="${escapeHtml(item.youtube_url)}" target="_blank" rel="noreferrer">YouTube: ${escapeHtml(item.youtube_title || 'karaoke video')}</a>`;
+    return `<a class="youtube-link" href="${escapeHtml(item.youtube_url)}" target="_blank" rel="noreferrer">YouTube: ${escapeHtml(item.youtube_title || 'karaoke video')}</a>${cacheStatusMarkup(item)}`;
   }
   if (item.video_url) {
     return `<small class="muted">Self-hosted video ready</small>`;
@@ -336,6 +344,13 @@ function syncDisplayPlayer(current, display = {}, next = null) {
   const manualYtId = extractYouTubeId(manualUrl);
   const manualFileUrl = isPlayableVideoFile(manualUrl) ? resolveVideoUrl(manualUrl) : '';
 
+  // A locally-cached mirror of the auto-attached YouTube video (see
+  // VideoCacheService) — same-origin <video> playback instead of an
+  // embedded iframe, once the background download has finished.
+  const cachedStatus = display.cached_video_status || current?.cached_video_status;
+  const cachedPath = display.cached_video_path || current?.cached_video_path;
+  const cachedUrl = cachedStatus === 'ready' && cachedPath ? resolveVideoUrl(cachedPath) : '';
+
   const ytId = display.youtube_video_id || extractYouTubeId(display.youtube_url || current?.youtube_url || '');
   // Prefer self-hosted MP4 (durable, no quota) over YouTube when both
   // are available on the song.
@@ -345,6 +360,8 @@ function syncDisplayPlayer(current, display = {}, next = null) {
     showYouTube(manualYtId);
   } else if (manualFileUrl) {
     showSelfHostedVideo(manualFileUrl);
+  } else if (cachedUrl) {
+    showSelfHostedVideo(cachedUrl);
   } else if (ytId) {
     showYouTube(ytId);
   } else if (videoUrl) {

@@ -88,6 +88,10 @@
 .chip-new { background: rgba(52, 208, 198, .16); color: var(--chip-new); border: 1px solid rgba(52, 208, 198, .5); }
 .chip-live { background: rgba(34, 197, 94, .18); color: #6ee7a7; border: 1px solid rgba(34, 197, 94, .5); }
 .chip-next { background: rgba(245, 158, 11, .16); color: #fcd34d; border: 1px solid rgba(245, 158, 11, .5); }
+.cache-badge { font-size: 11px; }
+.cache-ready { color: var(--ok); }
+.cache-pending { color: var(--muted); }
+.cache-failed { color: var(--warning); }
 
 /* ---------- Rotation queue ---------- */
 .kj-rotation { display: flex; flex-direction: column; }
