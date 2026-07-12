@@ -22,7 +22,6 @@ final class ActivityController
     private const VISIBLE = [
         'request:created', 'request:approved', 'request:status_changed',
         'request:youtube_attached', 'request:manual_video',
-        'request:video_cached', 'request:video_cache_failed',
         'display:state_changed', 'announcement:shown',
     ];
 
@@ -150,8 +149,6 @@ final class ActivityController
             'request:status_changed' => self::statusLine($singer, $title, (string)($payload['status'] ?? '')),
             'request:youtube_attached' => "Found a karaoke video for {$singer}" . ($title ? ": \"{$title}\"" : ''),
             'request:manual_video' => empty($payload['url']) ? "Video link removed for {$singer}" : "Video link updated for {$singer}",
-            'request:video_cached' => "Local video ready for {$singer}" . ($title ? ": \"{$title}\"" : ''),
-            'request:video_cache_failed' => "Local video mirror failed for {$singer} — using the YouTube embed",
             'announcement:shown' => 'Announcement: "' . self::truncate((string)($payload['message'] ?? ''), 80) . '"',
             'display:state_changed' => self::displayLine($payload, $screens),
             default => null,

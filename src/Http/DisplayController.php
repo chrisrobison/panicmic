@@ -58,24 +58,6 @@ final class DisplayController
         Response::json(['screens' => DisplayService::listScreens($db, (int)$session['id'])]);
     }
 
-    private static function extractYouTubeId(string $url): ?string
-    {
-        if ($url === '') {
-            return null;
-        }
-        $m = [];
-        if (preg_match('/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{6,})/', $url, $m)) {
-            return $m[1];
-        }
-        return null;
-    }
-
-    /** Mirrors queue.js's isPlayableVideoFile() so both paths agree on what counts as embeddable. */
-    private static function isPlayableVideoFile(string $url): bool
-    {
-        return (bool)preg_match('/\.(mp4|webm|ogg|ogv|mov|m4v|m3u8)(\?|#|$)/i', $url);
-    }
-
     private static function resolveScreen(mixed $raw): string
     {
         $clean = preg_replace('/[^a-z0-9_-]/i', '', (string)($raw ?? '')) ?: DisplayService::DEFAULT_SCREEN;
@@ -109,7 +91,6 @@ final class DisplayController
         if ($requestId !== null) {
             $stmt = $db->prepare(
                 'SELECT sr.id, sr.youtube_video_id, sr.youtube_url, sr.manual_video_url,
-                        sr.cached_video_status, sr.cached_video_path,
                         songs.video_url AS song_video_url
                  FROM song_requests sr
                  LEFT JOIN songs ON songs.id = sr.song_id
@@ -127,42 +108,19 @@ final class DisplayController
         $commandId = bin2hex(random_bytes(8)); // 16-char hex token
         $startAtServerMs = (int)(microtime(true) * 1000) + $startDelayMs;
 
-        // Same precedence as queue.js's syncDisplayPlayer: an explicit KJ
-        // manual link wins outright (YouTube link, then playable file),
-        // then a locally cached mirror of the auto-attached YouTube video,
-        // then the auto-attached YouTube video itself, then the song's own
-        // self-hosted URL.
-        $manualUrl = (string)($req['manual_video_url'] ?? '');
-        $manualYtId = self::extractYouTubeId($manualUrl);
-        $manualFileUrl = ($manualUrl !== '' && self::isPlayableVideoFile($manualUrl)) ? $manualUrl : '';
-        $cachedUrl = ($req['cached_video_status'] ?? null) === 'ready' ? (string)($req['cached_video_path'] ?? '') : '';
-
+        // Determine video info for the cue event.
         $ytId = $req['youtube_video_id'] ?? null;
         if (!$ytId && !empty($req['youtube_url'])) {
-            $ytId = self::extractYouTubeId((string)$req['youtube_url']);
+            $m = [];
+            if (preg_match('/(?:v=|youtu\.be\/|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{6,})/', (string)$req['youtube_url'], $m)) {
+                $ytId = $m[1];
+            }
         }
-        $songUrl = (string)($req['song_video_url'] ?? '');
-
-        if ($manualYtId) {
-            $provider = 'youtube';
-            $ytId = $manualYtId;
-            $videoUrl = '';
-        } elseif ($manualFileUrl) {
-            $provider = 'self_hosted';
-            $videoUrl = $manualFileUrl;
-        } elseif ($cachedUrl) {
-            $provider = 'self_hosted';
-            $videoUrl = $cachedUrl;
-        } elseif ($ytId) {
-            $provider = 'youtube';
-            $videoUrl = '';
-        } elseif ($songUrl) {
-            $provider = 'self_hosted';
-            $videoUrl = $songUrl;
-        } else {
-            $provider = 'none';
-            $videoUrl = '';
+        $videoUrl = $req['manual_video_url'] ?? '';
+        if (!$videoUrl && !empty($req['song_video_url'])) {
+            $videoUrl = (string)$req['song_video_url'];
         }
+        $provider = $ytId ? 'youtube' : ($videoUrl ? 'self_hosted' : 'none');
 
         // Publish display:cue event (WS daemon pushes this to displays).
         EventBus::publish($db, 'display:cue', [

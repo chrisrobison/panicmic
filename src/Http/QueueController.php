@@ -9,7 +9,6 @@ use PanicMic\Database\Connection;
 use PanicMic\Services\DisplayService;
 use PanicMic\Services\EventBus;
 use PanicMic\Services\QueueService;
-use PanicMic\Services\VideoCacheService;
 use PanicMic\Services\YouTubeService;
 use PanicMic\Support\Request;
 use PanicMic\Support\Response;
@@ -125,12 +124,6 @@ final class QueueController
         $input = Request::input();
         $status = (string)($input['status'] ?? 'pending');
         QueueService::setStatus($db, (int)$session['id'], $requestId, $status);
-        if ($status === 'up_next' || $status === 'now_singing') {
-            // Best-effort: mirror the YouTube video locally so playback can
-            // run off our own <video> element. No-ops unless an operator has
-            // opted in (VIDEO_CACHE_ENABLED=true) and yt-dlp is installed.
-            VideoCacheService::trigger($db, $tenant, (int)$session['id'], $requestId);
-        }
         if ($status === 'now_singing') {
             $screen = preg_replace('/[^a-z0-9_-]/i', '', (string)($input['screen'] ?? '')) ?: DisplayService::DEFAULT_SCREEN;
             DisplayService::update(
@@ -153,7 +146,6 @@ final class QueueController
                     'display' => DisplayService::state($db, (int)$session['id'], $screen),
                 ]);
             }
-            VideoCacheService::cleanup($db, $tenant, $requestId);
         }
         EventBus::publish($db, 'request:status_changed', ['requestId' => $requestId, 'status' => $input['status'] ?? null]);
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);

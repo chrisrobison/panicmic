@@ -14,7 +14,7 @@ final class QueueService
         $stmt = $db->prepare(
             "SELECT qi.id queue_item_id, qi.position, qi.status queue_status,
                     sr.id request_id, sr.party_type, sr.notes, sr.status request_status, sr.created_at, sr.updated_at status_updated_at,
-                    sr.reviewed_at, sr.is_priority, sr.cached_video_status, sr.cached_video_path,
+                    sr.reviewed_at, sr.is_priority,
                     sr.youtube_video_id, sr.youtube_title, sr.youtube_channel_title, sr.youtube_url, sr.youtube_matched_at,
                     sr.manual_video_url, sr.manual_video_attached_at,
                     sr.song_id, sr.shared_song_id,
