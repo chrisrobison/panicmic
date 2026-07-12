@@ -17,6 +17,7 @@ import {
   setScheduler,
   pauseDisplayPlayer,
   resumeDisplayPlayer,
+  unlockDisplayAudio,
 } from '../lib/queue.js';
 import { broadcast } from '../lib/broadcast.js';
 import { startRealtime, sendDisplayReady, sendDisplayStatus, onMessage, scheduleAtServerTime } from '../lib/ws.js';
@@ -39,6 +40,16 @@ function startDisplayBroadcastListener() {
 export function init() {
   // Let queue.js schedule synchronized playback against server time.
   setScheduler(scheduleAtServerTime);
+
+  // Sound is muted until this real click/tap happens — required by every
+  // browser's autoplay policy. Once unlocked it stays unlocked for the
+  // rest of this page's life (until reloaded), so this only needs to fire
+  // once per display session.
+  const audioUnlockButton = document.querySelector('[data-display-audio-unlock]');
+  audioUnlockButton?.addEventListener('click', () => {
+    unlockDisplayAudio();
+    audioUnlockButton.hidden = true;
+  });
 
   // BroadcastChannel listener (same-browser fast path — unchanged).
   startDisplayBroadcastListener();

@@ -187,6 +187,31 @@ h1, h2, p { margin-top: 0; }
   background-position: center;
 }
 
+/* Tap-to-unlock-sound gate. Covers the whole screen until tapped; hidden
+   via [hidden] once display.js confirms the click landed. Everything
+   plays muted until then — see queue.js's audioUnlocked flag. */
+.display-audio-unlock {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: rgba(4, 6, 10, .82);
+  color: var(--text);
+  font-size: clamp(18px, 2.4vw, 30px);
+  font-weight: 800;
+  cursor: pointer;
+}
+.display-audio-unlock[hidden] { display: none; }
+.display-audio-unlock-icon { font-size: clamp(48px, 8vw, 96px); }
+
 /* --- Stage (left column) --- */
 .display-stage {
   display: flex;

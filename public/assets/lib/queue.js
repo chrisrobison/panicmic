@@ -28,7 +28,30 @@ const displayPlayer = {
   cancelScheduled: null,     // cancel fn for the scheduled play
   driftTimer: null,          // self-hosted drift correction interval
   actualStartMs: null,       // wall-clock ms when local playback began
+  // True once the display page has had a real user gesture (a tap on the
+  // "enable sound" overlay). Browsers block unmuted autoplay without one;
+  // after it happens, the browser grants unmuted playback for the rest of
+  // this page's life, so every subsequent song can play with sound too —
+  // not just the one active when the tap happened.
+  audioUnlocked: false,
 };
+
+/**
+ * Unlock audio for the rest of this page's life. Must be called
+ * synchronously from within a real click/tap handler — that's what
+ * satisfies the browser's autoplay-with-sound requirement. Immediately
+ * unmutes whatever's currently playing (if anything) so there's no need
+ * to wait for the next song.
+ */
+export function unlockDisplayAudio() {
+  displayPlayer.audioUnlocked = true;
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.unMute(); displayPlayer.ytPlayer.setVolume(100); } catch (_) {}
+  } else if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) v.muted = false;
+  }
+}
 
 /**
  * Scheduler for synchronized playback. Defaults to a plain setTimeout
@@ -429,9 +452,14 @@ export function cueDisplayPlayer(videoInfo, onReady) {
           height: '100%',
           width: '100%',
           videoId: info.youtubeVideoId,
-          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
+          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: displayPlayer.audioUnlocked ? 0 : 1 },
           events: {
-            onReady: e => { try { e.target.mute(); e.target.cueVideoById(info.youtubeVideoId); } catch (_) {} },
+            onReady: e => {
+              try {
+                if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+                e.target.cueVideoById(info.youtubeVideoId);
+              } catch (_) {}
+            },
             onStateChange: e => {
               if (e.data === YT.PlayerState.CUED) { try { displayPlayer.onCued?.(); } catch (_) {} }
             },
@@ -439,7 +467,7 @@ export function cueDisplayPlayer(videoInfo, onReady) {
         });
       } else {
         try {
-          displayPlayer.ytPlayer.mute();
+          if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
           displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
         } catch (_) { ready(); }
       }
@@ -452,7 +480,7 @@ export function cueDisplayPlayer(videoInfo, onReady) {
     if (yt) yt.hidden = true;
     if (empty) empty.hidden = true;
     if (!v) { ready(); return; }
-    v.muted = true;
+    v.muted = !displayPlayer.audioUnlocked;
     v.preload = 'auto';
     if (v.getAttribute('src') !== src) v.setAttribute('src', src);
     v.hidden = false;
@@ -486,7 +514,7 @@ export function playDisplayPlayerAt(startAtServerMs, offsetSeconds = 0) {
 function startSyncedPlayback(offsetSeconds) {
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
     try {
-      displayPlayer.ytPlayer.mute(); // display pages stay muted
+      if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
       if (offsetSeconds > 0) displayPlayer.ytPlayer.seekTo(offsetSeconds, true);
       displayPlayer.ytPlayer.playVideo();
     } catch (_) {}
@@ -495,7 +523,7 @@ function startSyncedPlayback(offsetSeconds) {
   if (displayPlayer.provider === 'self_hosted') {
     const v = $('[data-display-video]');
     if (!v) return;
-    v.muted = true;
+    v.muted = !displayPlayer.audioUnlocked;
     try { if (offsetSeconds > 0) v.currentTime = offsetSeconds; } catch (_) {}
     v.play().catch(() => {});
     startDriftCorrection(v, offsetSeconds);
@@ -584,12 +612,15 @@ export function pauseDisplayPlayer() {
 /** Resume a paused player. */
 export function resumeDisplayPlayer() {
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
-    try { displayPlayer.ytPlayer.mute(); displayPlayer.ytPlayer.playVideo(); } catch (_) {}
+    try {
+      if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.playVideo();
+    } catch (_) {}
     return;
   }
   if (displayPlayer.provider === 'self_hosted') {
     const v = $('[data-display-video]');
-    if (v) { v.muted = true; v.play().catch(() => {}); }
+    if (v) { v.muted = !displayPlayer.audioUnlocked; v.play().catch(() => {}); }
   }
 }
 
@@ -615,7 +646,7 @@ function showSelfHostedVideo(src) {
     v.setAttribute('src', src);
   }
   v.hidden = false;
-  v.muted = true;
+  v.muted = !displayPlayer.audioUnlocked;
   v.play().catch(() => {});
 }
 
@@ -637,13 +668,17 @@ function showYouTube(videoId) {
         height: '100%',
         width: '100%',
         videoId,
-        // Display screens stay muted permanently — no sound is needed on
-        // the remote TV, and unmuting programmatically is what invites
-        // Chromium's autoplay policy to silently pause playback. Staying
-        // muted keeps autoplay/loadVideoById reliably allowed.
-        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
+        // Muted-by-default until a real tap unlocks audio (see
+        // unlockDisplayAudio) — that's what keeps autoplay/loadVideoById
+        // reliably allowed before the gesture happens.
+        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: displayPlayer.audioUnlocked ? 0 : 1 },
         events: {
-          onReady: e => { try { e.target.mute(); e.target.playVideo(); } catch (_) {} },
+          onReady: e => {
+            try {
+              if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+              e.target.playVideo();
+            } catch (_) {}
+          },
         },
       });
       return;
@@ -660,14 +695,14 @@ function showYouTube(videoId) {
       try {
         const state = displayPlayer.ytPlayer.getPlayerState();
         if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
-          displayPlayer.ytPlayer.mute();
+          if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
           displayPlayer.ytPlayer.playVideo();
         }
       } catch (_) {}
       return;
     }
 
-    try { displayPlayer.ytPlayer.mute(); } catch (_) {}
+    try { if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute(); } catch (_) {}
     displayPlayer.ytPlayer.loadVideoById(videoId);
   });
 }

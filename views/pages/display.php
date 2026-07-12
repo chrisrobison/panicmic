@@ -9,6 +9,15 @@ $requestQr = QrCode::svg($requestUrl, 320);
 ?>
 <section class="display-shell" data-screen="<?= e($screenId) ?>">
 
+  <!-- Browsers block unmuted autoplay until the page has had a real user
+       gesture. Everything plays muted until this is tapped; one tap then
+       unlocks sound for every song for the rest of this page's life
+       (until it's reloaded). -->
+  <button type="button" class="display-audio-unlock" data-display-audio-unlock>
+    <span class="display-audio-unlock-icon">🔊</span>
+    <span>Tap to enable sound</span>
+  </button>
+
   <!-- Stage: left area (video + overlays) -->
   <div class="display-stage">
 
