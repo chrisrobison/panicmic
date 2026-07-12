@@ -5,6 +5,7 @@ declare(strict_types=1);
 use PanicMic\Auth\Auth;
 use PanicMic\Database\Connection;
 use PanicMic\Services\BillingService;
+use PanicMic\Http\ActivityController;
 use PanicMic\Http\AuthController;
 use PanicMic\Http\BillingController;
 use PanicMic\Http\BrandingController;
@@ -260,6 +261,8 @@ try {
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => QueueController::updateStatus($db, $tenant, $session, (int)$m[1]),
         (bool)preg_match('#^/api/requests/(\d+)/youtube$#', $path, $m) && $method === 'POST' => QueueController::attachYouTubeVideo($db, $session, (int)$m[1]),
         (bool)preg_match('#^/api/requests/(\d+)/manual-video$#', $path, $m) && $method === 'POST' => QueueController::attachManualVideo($db, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/requests/(\d+)/approve$#', $path, $m) && $method === 'POST' => QueueController::approve($db, $tenant, $session, (int)$m[1]),
+        (bool)preg_match('#^/api/requests/(\d+)/priority$#', $path, $m) && $method === 'POST' => QueueController::setPriority($db, $tenant, $session, (int)$m[1]),
         $path === '/api/queue/reorder' && $method === 'PATCH' => QueueController::reorder($db, $tenant, $session),
         $path === '/api/display/state' && $method === 'GET' => DisplayController::showState($db, $tenant, $session),
         $path === '/api/display/state' && $method === 'POST' => DisplayController::updateState($db, $tenant, $session),
@@ -267,7 +270,9 @@ try {
         $path === '/api/display/screens' && $method === 'POST' => DisplayController::saveScreen($db, $tenant, $session),
         (bool)preg_match('#^/api/display/screens/([a-z0-9_-]+)$#', $path, $m) && $method === 'DELETE' => DisplayController::deleteScreen($db, $tenant, $session, $m[1]),
         $path === '/api/display/play' && $method === 'POST' => DisplayController::triggerPlay($db, $tenant, $session),
+        $path === '/api/display/pause' && $method === 'POST' => DisplayController::pause($db, $tenant, $session),
         $path === '/api/announcements' && $method === 'POST' => DisplayController::announce($db, $tenant, $session),
+        $path === '/api/admin/activity' && $method === 'GET' => ActivityController::index($db, $tenant, $session),
         $path === '/api/events' && $method === 'GET' => QueueController::events($db),
 
         // ----- Public events / schedule (read-only, unauthenticated)

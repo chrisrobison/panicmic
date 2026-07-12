@@ -47,6 +47,9 @@ final class QueueController
         );
         self::autoAttachYouTubeVideo($db, $requestId, $settings);
         EventBus::publish($db, 'request:created', ['requestId' => $requestId]);
+        if (!empty($settings['auto_accept_requests']) && QueueService::approve($db, (int)$session['id'], $requestId)) {
+            EventBus::publish($db, 'request:approved', ['requestId' => $requestId, 'fastTrack' => false]);
+        }
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
         Response::json(['requestId' => $requestId]);
     }
@@ -147,6 +150,36 @@ final class QueueController
         EventBus::publish($db, 'request:status_changed', ['requestId' => $requestId, 'status' => $input['status'] ?? null]);
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
         Response::json(['ok' => true]);
+    }
+
+    /**
+     * Accept a pending, unreviewed request into the rotation queue.
+     * {fast_track: true} additionally jumps it to the front of the line.
+     *
+     * @param array<string,mixed> $tenant @param array<string,mixed> $session
+     */
+    public static function approve(PDO $db, array $tenant, array $session, int $requestId): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+        $fastTrack = !empty(Request::input()['fast_track']);
+        if (!QueueService::approve($db, (int)$session['id'], $requestId, $fastTrack)) {
+            Response::json(['error' => 'Request not found or already reviewed'], 404);
+        }
+        EventBus::publish($db, 'request:approved', ['requestId' => $requestId, 'fastTrack' => $fastTrack]);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        Response::json(['ok' => true]);
+    }
+
+    /** @param array<string,mixed> $tenant @param array<string,mixed> $session */
+    public static function setPriority(PDO $db, array $tenant, array $session, int $requestId): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+        $priority = !empty(Request::input()['priority']);
+        if (!QueueService::setPriority($db, (int)$session['id'], $requestId, $priority)) {
+            Response::json(['error' => 'Request not found'], 404);
+        }
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        Response::json(['ok' => true, 'is_priority' => $priority]);
     }
 
     /** @param array<string,mixed> $tenant @param array<string,mixed> $session */

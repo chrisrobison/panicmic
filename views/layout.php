@@ -34,6 +34,9 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <meta name="apple-mobile-web-app-title" content="PanicMic">
   <link rel="manifest" href="<?= e(Url::path('/site.webmanifest')) ?>">
   <link rel="stylesheet" href="<?= e(Url::path('/assets/app.css')) ?>">
+<?php if ($page === 'admin-dashboard'): ?>
+  <link rel="stylesheet" href="<?= e(Url::path('/assets/dashboard.css')) ?>">
+<?php endif; ?>
   <style nonce="<?= e(\PanicMic\Support\Security::styleNonce()) ?>">
     :root {
       --primary: <?= e($tenant['primary_color'] ?? '#22c55e') ?>;

@@ -52,6 +52,7 @@ export async function loadQueue() {
     : '';
   const data = await api(`/api/queue${screenParam}`);
   renderPublicQueue(data.queue);
+  renderIncomingRequests(data.queue);
   renderAdminQueue(data.queue);
   renderDisplay(data.queue, data.display);
   renderAdminStats(data.queue);
@@ -91,38 +92,121 @@ function renderQueueItemSource(item) {
   return `<a class="provider-link muted" href="${escapeHtml(search)}" target="_blank" rel="noreferrer">↗ Find on YouTube</a>`;
 }
 
+/** Badge chips: VIP (KJ-toggled priority), Duo (duet/group party), NEW (singer's first request tonight). */
+function badgesMarkup(item) {
+  const chips = [];
+  if (item.is_priority) chips.push('<span class="chip chip-vip">VIP</span>');
+  if (item.party_type === 'duet' || item.party_type === 'group') chips.push('<span class="chip chip-duo">Duo</span>');
+  if (item.is_new) chips.push('<span class="chip chip-new">NEW</span>');
+  return chips.join('');
+}
+
+function timeLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(String(iso).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/** mm:ss elapsed since an ISO/SQL timestamp; used for the now-singing row. */
+export function elapsedLabel(iso) {
+  if (!iso) return '';
+  const started = new Date(String(iso).replace(' ', 'T')).getTime();
+  if (Number.isNaN(started)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - started) / 1000));
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Requests still awaiting KJ review: pending and never accepted into rotation. */
+export function renderIncomingRequests(queue) {
+  const container = $('[data-incoming-requests]');
+  if (!container) return;
+  const incoming = queue.filter(item => item.is_incoming).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const countEl = $('[data-incoming-count]');
+  if (countEl) countEl.textContent = incoming.length;
+  container.innerHTML = incoming.map(item => `
+    <article class="incoming-item" data-request-id="${item.request_id}">
+      <div class="incoming-item-head">
+        ${badgesMarkup(item)}
+        <strong class="incoming-name">${escapeHtml(item.singer_name)}</strong>
+        <time class="incoming-time">${escapeHtml(timeLabel(item.created_at))}</time>
+      </div>
+      <p class="incoming-song">${escapeHtml(item.title)}</p>
+      <p class="incoming-artist muted">${escapeHtml(item.artist)}</p>
+      <div class="incoming-actions">
+        <button type="button" class="icon-btn ok" data-approve="${item.request_id}" title="Accept into rotation">✓</button>
+        <button type="button" class="icon-btn danger" data-deny="${item.request_id}" title="Deny request">✕</button>
+        <button type="button" class="icon-btn" data-fast-track="${item.request_id}" title="Accept &amp; move to front">➜</button>
+      </div>
+    </article>
+  `).join('') || '<p class="muted">No new requests.</p>';
+}
+
 export function renderAdminQueue(queue) {
   const container = $('[data-admin-queue]');
   if (!container) return;
-  container.innerHTML = queue.map(item => `
+  const rotation = queue.filter(item => !item.is_incoming);
+  container.innerHTML = rotation.map(item => `
     <article class="queue-item status-${escapeHtml(item.queue_status)}" draggable="true" data-request-id="${item.request_id}">
+      <div class="queue-item-drag" title="Drag to reorder">⠿</div>
+      <div class="queue-item-pos">${escapeHtml(item.position)}</div>
       <div class="queue-item-main">
         ${coverMarkup(item)}
-        <div>
-          <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
-          <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
+        <div class="queue-item-body">
+          <div class="queue-item-singer-row">
+            <strong>${escapeHtml(item.singer_name)}</strong>
+            ${badgesMarkup(item)}
+            ${item.queue_status === 'now_singing' ? `<span class="chip chip-live">NOW SINGING &middot; ${escapeHtml(elapsedLabel(item.status_updated_at))}</span>` : ''}
+            ${item.queue_status === 'up_next' ? '<span class="chip chip-next">UP NEXT</span>' : ''}
+          </div>
+          <p class="queue-item-song">${escapeHtml(item.title)} <span class="muted">— ${escapeHtml(item.artist)}</span> ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''}</p>
+          ${item.notes ? `<small class="muted">${escapeHtml(item.notes)}</small>` : ''}
           ${renderQueueItemSource(item)}
         </div>
       </div>
-      <div class="queue-actions">
-        ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
-        <button data-youtube="${item.request_id}">Find video</button>
-        <button data-manual-video="${item.request_id}" data-manual-current="${escapeHtml(item.manual_video_url || '')}">${item.manual_video_url ? 'Edit link' : 'Link video'}</button>
-      </div>
+      <details class="queue-item-menu">
+        <summary title="More actions">&#8942;</summary>
+        <div class="queue-item-menu-panel">
+          <button type="button" data-priority="${item.request_id}" data-priority-current="${item.is_priority ? 1 : 0}">${item.is_priority ? '★ Remove VIP' : '☆ Mark VIP'}</button>
+          ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
+          <button data-youtube="${item.request_id}">Find video</button>
+          <button data-manual-video="${item.request_id}" data-manual-current="${escapeHtml(item.manual_video_url || '')}">${item.manual_video_url ? 'Edit link' : 'Link video'}</button>
+        </div>
+      </details>
     </article>
-  `).join('') || '<p class="muted">Queue is empty.</p>';
+  `).join('') || '<p class="muted">Queue is empty. Accept an incoming request to get started.</p>';
   enableDrag(container);
+
+  const rotCount = $('[data-rotation-count]');
+  if (rotCount) rotCount.textContent = rotation.filter(i => !['completed', 'skipped', 'canceled'].includes(i.queue_status)).length;
+
+  const estEl = $('[data-rotation-estimate]');
+  const footEl = $('[data-rotation-footer]');
+  const active = rotation.filter(i => !['completed', 'skipped', 'canceled'].includes(i.queue_status));
+  if (estEl || footEl) {
+    const AVG_MIN = 5;
+    const totalSecs = active.length * AVG_MIN * 60;
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    const est = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (estEl) estEl.textContent = est;
+    if (footEl) footEl.textContent = `${active.length} singer${active.length !== 1 ? 's' : ''} • ${est}`;
+  }
 }
 
 export function renderAdminStats(queue) {
   const root = $('[data-admin-stats]');
   if (!root) return;
-  const counts = { queue: 0, up_next: 0, now_singing: 0, completed: 0 };
+  const counts = { queue: 0, up_next: 0, now_singing: 0, completed: 0, incoming: 0 };
   for (const item of queue) {
+    if (item.is_incoming) counts.incoming++;
     if (item.queue_status === 'up_next') counts.up_next++;
     else if (item.queue_status === 'now_singing') counts.now_singing++;
     else if (item.queue_status === 'completed') counts.completed++;
-    if (['pending', 'up_next', 'now_singing'].includes(item.queue_status)) counts.queue++;
+    if (!item.is_incoming && ['pending', 'up_next', 'now_singing'].includes(item.queue_status)) counts.queue++;
   }
   for (const [key, value] of Object.entries(counts)) {
     const el = $(`[data-stat="${key}"]`, root);
@@ -483,6 +567,30 @@ export function seekDisplayPlayer(seconds) {
 /** Stop and clear the player. Public wrapper over the internal stop. */
 export function stopDisplayPlayerPublic() {
   stopDisplayPlayer();
+}
+
+/** Pause the active player in place (does not clear cue/seek state). */
+export function pauseDisplayPlayer() {
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.pauseVideo(); } catch (_) {}
+    return;
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) v.pause();
+  }
+}
+
+/** Resume a paused player. */
+export function resumeDisplayPlayer() {
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.mute(); displayPlayer.ytPlayer.playVideo(); } catch (_) {}
+    return;
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) { v.muted = true; v.play().catch(() => {}); }
+  }
 }
 
 function showEmptyPlayer(current) {

@@ -15,6 +15,8 @@ import {
   playDisplayPlayerAt,
   getDisplayPlayerStatus,
   setScheduler,
+  pauseDisplayPlayer,
+  resumeDisplayPlayer,
 } from '../lib/queue.js';
 import { broadcast } from '../lib/broadcast.js';
 import { startRealtime, sendDisplayReady, sendDisplayStatus, onMessage, scheduleAtServerTime } from '../lib/ws.js';
@@ -41,8 +43,17 @@ export function init() {
   // BroadcastChannel listener (same-browser fast path — unchanged).
   startDisplayBroadcastListener();
 
-  // Realtime: prefers WS, falls back to short-poll.
-  startRealtime(() => {
+  // Realtime: prefers WS, falls back to short-poll. Every EventBus event
+  // (WS daemon or short-poll fallback, same shape either way) also flows
+  // through here, so display:pause/display:resume from the KJ console's
+  // "Pause" button are picked up without any daemon-side special-casing.
+  startRealtime(events => {
+    for (const e of events || []) {
+      if (e.event_name !== 'display:pause' && e.event_name !== 'display:resume') continue;
+      const screen = e.payload?.screen || 'all';
+      if (screen !== 'all' && screen !== appConfig.screen) continue;
+      if (e.event_name === 'display:pause') pauseDisplayPlayer(); else resumeDisplayPlayer();
+    }
     loadQueue().catch(() => {});
   });
 

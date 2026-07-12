@@ -16,7 +16,7 @@ final class DisplayService
      * display state to now_singing automatically when a request
      * transitions to that status.
      */
-    private const MODES = ['idle', 'queue', 'now_singing', 'clean_stage', 'announcement'];
+    private const MODES = ['idle', 'queue', 'now_singing', 'clean_stage', 'announcement', 'blackout'];
 
     /** @return array<string,mixed> */
     public static function state(PDO $db, int $sessionId, string $screen = self::DEFAULT_SCREEN): array
