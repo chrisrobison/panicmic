@@ -39,18 +39,58 @@ const displayPlayer = {
 /**
  * Unlock audio for the rest of this page's life. Must be called
  * synchronously from within a real click/tap handler — that's what
- * satisfies the browser's autoplay-with-sound requirement. Immediately
- * unmutes whatever's currently playing (if anything) so there's no need
- * to wait for the next song.
+ * satisfies the browser's autoplay-with-sound requirement.
+ *
+ * For the currently-playing video, this doesn't just call unMute() on the
+ * existing player — that's unreliable for YouTube's iframe even from a
+ * genuine click, because the iframe was originally created *muted*
+ * (mute: 1 in playerVars) and some browsers don't honor a later
+ * postMessage-based unMute() on a player that was born muted. Destroying
+ * and recreating the iframe with mute: 0 from the start, synchronously
+ * inside this same click, is the reliable pattern. Every subsequent song
+ * already creates its player unmuted-from-birth once audioUnlocked is
+ * true (see cueDisplayPlayer/showYouTube), so this recreation is only
+ * needed for whatever's already on screen at unlock time.
  */
 export function unlockDisplayAudio() {
   displayPlayer.audioUnlocked = true;
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
-    try { displayPlayer.ytPlayer.unMute(); displayPlayer.ytPlayer.setVolume(100); } catch (_) {}
+    recreateYouTubePlayerUnmuted();
   } else if (displayPlayer.provider === 'self_hosted') {
     const v = $('[data-display-video]');
     if (v) v.muted = false;
   }
+}
+
+function recreateYouTubePlayerUnmuted() {
+  const yt = $('[data-display-yt]');
+  const videoId = displayPlayer.currentVideoId;
+  if (!yt || !videoId) return;
+
+  let resumeAt = 0;
+  let wasPlaying = true;
+  try { resumeAt = displayPlayer.ytPlayer.getCurrentTime() || 0; } catch (_) {}
+  try { wasPlaying = displayPlayer.ytPlayer.getPlayerState() !== YT.PlayerState.PAUSED; } catch (_) {}
+
+  try { displayPlayer.ytPlayer.destroy(); } catch (_) {}
+  displayPlayer.ytPlayer = null;
+
+  displayPlayer.ytPlayer = new YT.Player(yt, {
+    height: '100%',
+    width: '100%',
+    videoId,
+    playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 0 },
+    events: {
+      onReady: e => {
+        try {
+          e.target.unMute();
+          e.target.setVolume(100);
+          e.target.seekTo(resumeAt, true);
+          if (wasPlaying) e.target.playVideo();
+        } catch (_) {}
+      },
+    },
+  });
 }
 
 /**
