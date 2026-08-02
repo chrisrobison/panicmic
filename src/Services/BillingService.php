@@ -116,6 +116,7 @@ final class BillingService
         $seats = self::operatorSeatCount($tenantDb);
         $extraSeats = max(0, $seats - $limits['included_kj']);
         $projectedCents = $limits['monthly_cents'] + ($extraSeats * $limits['additional_kj_cents']);
+        $stripe = StripeService::configurationStatus();
 
         return [
             'plan_code' => (string)($tenant['plan_code'] ?? 'standard'),
@@ -129,6 +130,8 @@ final class BillingService
             'additional_kj' => $extraSeats,
             'additional_kj_cents' => $limits['additional_kj_cents'],
             'projected_monthly_cents' => $projectedCents,
+            'checkout_configured' => $stripe['checkout'],
+            'webhook_configured' => $stripe['webhook'],
         ];
     }
 

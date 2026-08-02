@@ -28,12 +28,14 @@ live on the apex (`panicmic.com`); KJ traffic resolves by subdomain.
   cancel flows
 - KJ dashboard with queue status controls, drag-and-drop reorder, manual
   requests, announcements, session start/end, and display state controls
+- Password recovery and team management with expiring one-time invitations,
+  KJ/admin roles, immediate deactivation, and last-admin safeguards
 - Song catalog CRUD with CSV export, YouTube playlist import, and FULLTEXT
   search
-- Fullscreen projection UI with live SSE updates, an embedded video player,
+- Fullscreen projection UI with live WebSocket/short-poll updates, an embedded video player,
   QR code, queue, announcements, clean-stage, and idle modes
-- Multi-monitor support: independent display windows per screen, coordinated
-  over `BroadcastChannel` with the server as source of truth
+- Multi-monitor support: independent screen layouts and persisted,
+  server-authoritative synchronized playback with reconnect recovery
 - Super-admin tenant creation, domain management, provisioning, migrations,
   billing controls, and impersonation handoff
 - REST API plus Server-Sent Events for live queue, request, announcement, and
@@ -42,7 +44,8 @@ live on the apex (`panicmic.com`); KJ traffic resolves by subdomain.
   path
 - Tenant-scoped content uploads served through `/files/*` from
   `/content/<tenant-slug>`, with magic-byte upload verification
-- Optional YouTube karaoke video matching, plus KJ-supplied manual video links
+- Optional YouTube karaoke video matching, KJ-supplied provider links, and
+  direct self-hosted MP4/WebM/MOV upload with byte-range playback
 - Mobile-first public and dashboard layouts (hamburger nav, infinite-scroll
   catalog)
 - Security controls: secure sessions, CSRF token checks, login and
@@ -220,6 +223,7 @@ Each KJ's tenant schema stores isolated operational data:
 - `audit_log`
 - `settings`
 - `payments_tips`
+- `password_reset_tokens`
 - `schema_migrations`
 
 Run migrations:
@@ -244,6 +248,9 @@ make check     # all three; what CI runs
 ```
 
 CI (`.github/workflows/ci.yml`) runs `make check` across PHP 8.2, 8.3, and 8.4.
+
+See [docs/production.md](docs/production.md) for the deployment, billing,
+mail, WebSocket, upload, security, and observability checklist.
 
 The migration runner tracks applied files in a `schema_migrations` table per
 database (auto-created on first run), keyed by filename and checksum. On its

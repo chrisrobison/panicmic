@@ -16,6 +16,7 @@ final class SettingsService
         'max_requests_per_singer' => 1,
         'default_party_type' => 'solo',      // 'solo' | 'duet' | 'group'
         'show_explicit_songs' => true,
+        'auto_accept_requests' => false,     // skip the Incoming Requests review tray
     ];
 
     /** @return array<string,mixed> */

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace PanicMic\Support;
 
 /**
- * Local-only observability layer.
+ * Structured local observability with optional best-effort forwarding.
  *
  * Uncaught exceptions and explicit report() calls are written as
  * structured JSON lines to storage/logs/errors-YYYY-MM-DD.log. One file
@@ -13,7 +13,8 @@ namespace PanicMic\Support;
  * and an admin can prune old days with `find storage/logs -mtime +N
  * -delete` (or a cron).
  *
- * No third-party services, no SDK dependency — just the local disk.
+ * ERROR_REPORTING_URL can point at an error collector or compatible webhook;
+ * local disk remains the durable fallback when that service is unavailable.
  */
 final class ErrorReporter
 {
@@ -42,7 +43,9 @@ final class ErrorReporter
 
     public static function report(\Throwable $error, ?string $note = null): void
     {
-        self::writeLocal(self::serialize($error, $note));
+        $payload = self::serialize($error, $note);
+        self::writeLocal($payload);
+        self::forwardIfConfigured($payload);
     }
 
     /**
@@ -54,7 +57,7 @@ final class ErrorReporter
      */
     public static function log(string $event, array $context = []): void
     {
-        self::writeLocal([
+        $payload = [
             'timestamp' => date(DATE_ATOM),
             'env' => (string)(Env::get('APP_ENV', 'production') ?? 'production'),
             'event' => $event,
@@ -62,7 +65,9 @@ final class ErrorReporter
             'uri' => $_SERVER['REQUEST_URI'] ?? null,
             'method' => $_SERVER['REQUEST_METHOD'] ?? null,
             'context' => $context,
-        ]);
+        ];
+        self::writeLocal($payload);
+        self::forwardIfConfigured($payload);
     }
 
     /** @return array<string,mixed> */
@@ -96,5 +101,33 @@ final class ErrorReporter
             json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES) . "\n",
             FILE_APPEND | LOCK_EX,
         );
+    }
+
+    /** @param array<string,mixed> $payload */
+    private static function forwardIfConfigured(array $payload): void
+    {
+        $endpoint = trim((string)(Env::get('ERROR_REPORTING_URL', '') ?? ''));
+        if ($endpoint === '' || filter_var($endpoint, FILTER_VALIDATE_URL) === false) {
+            return;
+        }
+        $body = json_encode($payload, JSON_UNESCAPED_SLASHES);
+        if ($body === false) {
+            return;
+        }
+        $headers = "Content-Type: application/json\r\n";
+        $token = (string)(Env::get('ERROR_REPORTING_TOKEN', '') ?? '');
+        if ($token !== '') {
+            $headers .= "Authorization: Bearer {$token}\r\n";
+        }
+        $context = stream_context_create([
+            'http' => [
+                'method' => 'POST',
+                'header' => $headers,
+                'content' => $body,
+                'timeout' => 1,
+                'ignore_errors' => true,
+            ],
+        ]);
+        @file_get_contents($endpoint, false, $context);
     }
 }

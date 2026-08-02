@@ -6,6 +6,32 @@ namespace PanicMic\Support;
 
 final class Url
 {
+    public static function origin(): string
+    {
+        $configured = rtrim(trim((string)(Env::get('APP_URL', '') ?? '')), '/');
+        if ($configured !== '') {
+            $parts = parse_url($configured);
+            if (is_array($parts)
+                && in_array($parts['scheme'] ?? '', ['http', 'https'], true)
+                && !empty($parts['host'])
+            ) {
+                return $configured;
+            }
+        }
+
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        if (Env::get('APP_ENV') === 'production') {
+            $scheme = 'https';
+        }
+        $host = strtolower((string)($_SERVER['HTTP_HOST'] ?? 'localhost'));
+        // Tenant resolution already validates the host, but keep this helper
+        // independently safe when used from tests or CLI.
+        if (!preg_match('/^[a-z0-9.-]+(?::\d{1,5})?$/', $host)) {
+            $host = 'localhost';
+        }
+        return $scheme . '://' . $host . self::basePath();
+    }
+
     public static function basePath(): string
     {
         $configured = trim(Env::get('APP_BASE_PATH', '') ?? '');

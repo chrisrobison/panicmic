@@ -28,7 +28,116 @@ const displayPlayer = {
   cancelScheduled: null,     // cancel fn for the scheduled play
   driftTimer: null,          // self-hosted drift correction interval
   actualStartMs: null,       // wall-clock ms when local playback began
+  pausedAtMs: null,          // used to keep drift clock stable across pause
+  // True once the display page has had a real user gesture (a tap on the
+  // "enable sound" overlay). Browsers block unmuted autoplay without one;
+  // after it happens, the browser grants unmuted playback for the rest of
+  // this page's life, so every subsequent song can play with sound too —
+  // not just the one active when the tap happened.
+  audioUnlocked: false,
+  defaultVolume: 80,
+  synchronizedCommands: false,
+  recoveredCommandId: null,
 };
+
+/** Make cue/play-at commands the only path allowed to start display media. */
+export function enableSynchronizedPlayback() {
+  displayPlayer.synchronizedCommands = true;
+}
+
+export function applyDisplayConfiguration(configuration = {}) {
+  const shell = $('[data-screen]');
+  if (!shell) return;
+  const layout = ['main', 'lyrics', 'lobby', 'stage', 'custom'].includes(configuration.layout)
+    ? configuration.layout
+    : 'main';
+  const showQr = Number(configuration.show_qr) === 1 || configuration.show_qr === true;
+  const showQueue = Number(configuration.show_queue) === 1 || configuration.show_queue === true;
+
+  shell.dataset.layout = layout;
+  shell.classList.toggle('display-no-qr', !showQr);
+  shell.classList.toggle('display-no-queue', !showQueue);
+  shell.classList.toggle('display-no-sidebar', !showQr && !showQueue);
+
+  const between = $('[data-display-between]');
+  const idle = $('[data-display-idle-message]');
+  const playing = !$('[data-display-player]')?.hidden;
+  if (between && idle) {
+    between.hidden = playing || !showQr;
+    idle.hidden = playing || showQr;
+  }
+
+  displayPlayer.defaultVolume = Math.max(0, Math.min(100, Number(configuration.default_volume) || 0));
+  applyPlayerVolume();
+}
+
+function applyPlayerVolume() {
+  if (displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume); } catch (_) {}
+  }
+  const video = $('[data-display-video]');
+  if (video) video.volume = displayPlayer.defaultVolume / 100;
+}
+
+/**
+ * Unlock audio for the rest of this page's life. Must be called
+ * synchronously from within a real click/tap handler — that's what
+ * satisfies the browser's autoplay-with-sound requirement.
+ *
+ * For the currently-playing video, this doesn't just call unMute() on the
+ * existing player — that's unreliable for YouTube's iframe even from a
+ * genuine click, because the iframe was originally created *muted*
+ * (mute: 1 in playerVars) and some browsers don't honor a later
+ * postMessage-based unMute() on a player that was born muted. Destroying
+ * and recreating the iframe with mute: 0 from the start, synchronously
+ * inside this same click, is the reliable pattern. Every subsequent song
+ * already creates its player unmuted-from-birth once audioUnlocked is
+ * true (see cueDisplayPlayer/showYouTube), so this recreation is only
+ * needed for whatever's already on screen at unlock time.
+ */
+export function unlockDisplayAudio() {
+  displayPlayer.audioUnlocked = true;
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    recreateYouTubePlayerUnmuted();
+  } else if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) {
+      v.muted = false;
+      v.volume = displayPlayer.defaultVolume / 100;
+    }
+  }
+}
+
+function recreateYouTubePlayerUnmuted() {
+  const yt = $('[data-display-yt]');
+  const videoId = displayPlayer.currentVideoId;
+  if (!yt || !videoId) return;
+
+  let resumeAt = 0;
+  let wasPlaying = true;
+  try { resumeAt = displayPlayer.ytPlayer.getCurrentTime() || 0; } catch (_) {}
+  try { wasPlaying = displayPlayer.ytPlayer.getPlayerState() !== YT.PlayerState.PAUSED; } catch (_) {}
+
+  try { displayPlayer.ytPlayer.destroy(); } catch (_) {}
+  displayPlayer.ytPlayer = null;
+
+  displayPlayer.ytPlayer = new YT.Player(yt, {
+    height: '100%',
+    width: '100%',
+    videoId,
+    playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 0 },
+    events: {
+      onReady: e => {
+        try {
+          e.target.unMute();
+          e.target.setVolume(displayPlayer.defaultVolume);
+          e.target.seekTo(resumeAt, true);
+          if (wasPlaying) e.target.playVideo();
+        } catch (_) {}
+      },
+    },
+  });
+}
 
 /**
  * Scheduler for synchronized playback. Defaults to a plain setTimeout
@@ -52,8 +161,10 @@ export async function loadQueue() {
     : '';
   const data = await api(`/api/queue${screenParam}`);
   renderPublicQueue(data.queue);
+  renderIncomingRequests(data.queue);
   renderAdminQueue(data.queue);
   renderDisplay(data.queue, data.display);
+  applyDisplayConfiguration(data.screen_config || {});
   renderAdminStats(data.queue);
   return data;
 }
@@ -91,38 +202,121 @@ function renderQueueItemSource(item) {
   return `<a class="provider-link muted" href="${escapeHtml(search)}" target="_blank" rel="noreferrer">↗ Find on YouTube</a>`;
 }
 
+/** Badge chips: VIP (KJ-toggled priority), Duo (duet/group party), NEW (singer's first request tonight). */
+function badgesMarkup(item) {
+  const chips = [];
+  if (item.is_priority) chips.push('<span class="chip chip-vip">VIP</span>');
+  if (item.party_type === 'duet' || item.party_type === 'group') chips.push('<span class="chip chip-duo">Duo</span>');
+  if (item.is_new) chips.push('<span class="chip chip-new">NEW</span>');
+  return chips.join('');
+}
+
+function timeLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(String(iso).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+/** mm:ss elapsed since an ISO/SQL timestamp; used for the now-singing row. */
+export function elapsedLabel(iso) {
+  if (!iso) return '';
+  const started = new Date(String(iso).replace(' ', 'T')).getTime();
+  if (Number.isNaN(started)) return '';
+  const secs = Math.max(0, Math.floor((Date.now() - started) / 1000));
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+/** Requests still awaiting KJ review: pending and never accepted into rotation. */
+export function renderIncomingRequests(queue) {
+  const container = $('[data-incoming-requests]');
+  if (!container) return;
+  const incoming = queue.filter(item => item.is_incoming).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const countEl = $('[data-incoming-count]');
+  if (countEl) countEl.textContent = incoming.length;
+  container.innerHTML = incoming.map(item => `
+    <article class="incoming-item" data-request-id="${item.request_id}">
+      <div class="incoming-item-head">
+        ${badgesMarkup(item)}
+        <strong class="incoming-name">${escapeHtml(item.singer_name)}</strong>
+        <time class="incoming-time">${escapeHtml(timeLabel(item.created_at))}</time>
+      </div>
+      <p class="incoming-song">${escapeHtml(item.title)}</p>
+      <p class="incoming-artist muted">${escapeHtml(item.artist)}</p>
+      <div class="incoming-actions">
+        <button type="button" class="icon-btn ok" data-approve="${item.request_id}" title="Accept into rotation">✓</button>
+        <button type="button" class="icon-btn danger" data-deny="${item.request_id}" title="Deny request">✕</button>
+        <button type="button" class="icon-btn" data-fast-track="${item.request_id}" title="Accept &amp; move to front">➜</button>
+      </div>
+    </article>
+  `).join('') || '<p class="muted">No new requests.</p>';
+}
+
 export function renderAdminQueue(queue) {
   const container = $('[data-admin-queue]');
   if (!container) return;
-  container.innerHTML = queue.map(item => `
+  const rotation = queue.filter(item => !item.is_incoming);
+  container.innerHTML = rotation.map(item => `
     <article class="queue-item status-${escapeHtml(item.queue_status)}" draggable="true" data-request-id="${item.request_id}">
+      <div class="queue-item-drag" title="Drag to reorder">⠿</div>
+      <div class="queue-item-pos">${escapeHtml(item.position)}</div>
       <div class="queue-item-main">
         ${coverMarkup(item)}
-        <div>
-          <strong>${escapeHtml(item.position)}. ${escapeHtml(item.singer_name)}</strong>
-          <p>${escapeHtml(item.title)} - ${escapeHtml(item.artist)} ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''} ${item.notes ? `<br><small>${escapeHtml(item.notes)}</small>` : ''}</p>
+        <div class="queue-item-body">
+          <div class="queue-item-singer-row">
+            <strong>${escapeHtml(item.singer_name)}</strong>
+            ${badgesMarkup(item)}
+            ${item.queue_status === 'now_singing' ? `<span class="chip chip-live">NOW SINGING &middot; ${escapeHtml(elapsedLabel(item.status_updated_at))}</span>` : ''}
+            ${item.queue_status === 'up_next' ? '<span class="chip chip-next">UP NEXT</span>' : ''}
+          </div>
+          <p class="queue-item-song">${escapeHtml(item.title)} <span class="muted">— ${escapeHtml(item.artist)}</span> ${item.song_source === 'shared' ? '<span class="badge shared">shared</span>' : ''}</p>
+          ${item.notes ? `<small class="muted">${escapeHtml(item.notes)}</small>` : ''}
           ${renderQueueItemSource(item)}
         </div>
       </div>
-      <div class="queue-actions">
-        ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
-        <button data-youtube="${item.request_id}">Find video</button>
-        <button data-manual-video="${item.request_id}" data-manual-current="${escapeHtml(item.manual_video_url || '')}">${item.manual_video_url ? 'Edit link' : 'Link video'}</button>
-      </div>
+      <details class="queue-item-menu">
+        <summary title="More actions">&#8942;</summary>
+        <div class="queue-item-menu-panel">
+          <button type="button" data-priority="${item.request_id}" data-priority-current="${item.is_priority ? 1 : 0}">${item.is_priority ? '★ Remove VIP' : '☆ Mark VIP'}</button>
+          ${['up_next', 'now_singing', 'completed', 'skipped', 'canceled'].map(status => `<button data-status="${status}" data-id="${item.request_id}">${status.replace('_', ' ')}</button>`).join('')}
+          <button data-youtube="${item.request_id}">Find video</button>
+          <button data-manual-video="${item.request_id}" data-manual-current="${escapeHtml(item.manual_video_url || '')}">${item.manual_video_url ? 'Edit link' : 'Link video'}</button>
+        </div>
+      </details>
     </article>
-  `).join('') || '<p class="muted">Queue is empty.</p>';
+  `).join('') || '<p class="muted">Queue is empty. Accept an incoming request to get started.</p>';
   enableDrag(container);
+
+  const rotCount = $('[data-rotation-count]');
+  if (rotCount) rotCount.textContent = rotation.filter(i => !['completed', 'skipped', 'canceled'].includes(i.queue_status)).length;
+
+  const estEl = $('[data-rotation-estimate]');
+  const footEl = $('[data-rotation-footer]');
+  const active = rotation.filter(i => !['completed', 'skipped', 'canceled'].includes(i.queue_status));
+  if (estEl || footEl) {
+    const AVG_MIN = 5;
+    const totalSecs = active.length * AVG_MIN * 60;
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60);
+    const s = totalSecs % 60;
+    const est = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    if (estEl) estEl.textContent = est;
+    if (footEl) footEl.textContent = `${active.length} singer${active.length !== 1 ? 's' : ''} • ${est}`;
+  }
 }
 
 export function renderAdminStats(queue) {
   const root = $('[data-admin-stats]');
   if (!root) return;
-  const counts = { queue: 0, up_next: 0, now_singing: 0, completed: 0 };
+  const counts = { queue: 0, up_next: 0, now_singing: 0, completed: 0, incoming: 0 };
   for (const item of queue) {
+    if (item.is_incoming) counts.incoming++;
     if (item.queue_status === 'up_next') counts.up_next++;
     else if (item.queue_status === 'now_singing') counts.now_singing++;
     else if (item.queue_status === 'completed') counts.completed++;
-    if (['pending', 'up_next', 'now_singing'].includes(item.queue_status)) counts.queue++;
+    if (!item.is_incoming && ['pending', 'up_next', 'now_singing'].includes(item.queue_status)) counts.queue++;
   }
   for (const [key, value] of Object.entries(counts)) {
     const el = $(`[data-stat="${key}"]`, root);
@@ -244,6 +438,13 @@ function syncDisplayPlayer(current, display = {}, next = null) {
     }
   }
 
+  // Display pages use cue/play-at as the single playback authority. Queue
+  // refreshes still update labels and overlays, but must never start media:
+  // doing so would race the scheduled command and desynchronize screens.
+  if (displayPlayer.synchronizedCommands) {
+    return;
+  }
+
   // A KJ-supplied manual link wins when it is something the display can
   // actually embed (a YouTube URL or a direct video file). Non-embeddable
   // links stay a console-only convenience and fall through to the song's
@@ -296,6 +497,7 @@ function clearSyncPlaybackState() {
   displayPlayer.cued = false;
   displayPlayer.pendingPlayback = { startAtServerMs: null, offsetSeconds: 0 };
   displayPlayer.actualStartMs = null;
+  displayPlayer.pausedAtMs = null;
 }
 
 /* -------------------------------------------------------------- */
@@ -345,9 +547,15 @@ export function cueDisplayPlayer(videoInfo, onReady) {
           height: '100%',
           width: '100%',
           videoId: info.youtubeVideoId,
-          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
+          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: displayPlayer.audioUnlocked ? 0 : 1 },
           events: {
-            onReady: e => { try { e.target.mute(); e.target.cueVideoById(info.youtubeVideoId); } catch (_) {} },
+            onReady: e => {
+              try {
+                if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+                e.target.setVolume(displayPlayer.defaultVolume);
+                e.target.cueVideoById(info.youtubeVideoId);
+              } catch (_) {}
+            },
             onStateChange: e => {
               if (e.data === YT.PlayerState.CUED) { try { displayPlayer.onCued?.(); } catch (_) {} }
             },
@@ -355,7 +563,8 @@ export function cueDisplayPlayer(videoInfo, onReady) {
         });
       } else {
         try {
-          displayPlayer.ytPlayer.mute();
+          if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+          displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
           displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
         } catch (_) { ready(); }
       }
@@ -368,7 +577,8 @@ export function cueDisplayPlayer(videoInfo, onReady) {
     if (yt) yt.hidden = true;
     if (empty) empty.hidden = true;
     if (!v) { ready(); return; }
-    v.muted = true;
+    v.muted = !displayPlayer.audioUnlocked;
+    v.volume = displayPlayer.defaultVolume / 100;
     v.preload = 'auto';
     if (v.getAttribute('src') !== src) v.setAttribute('src', src);
     v.hidden = false;
@@ -387,6 +597,44 @@ export function cueDisplayPlayer(videoInfo, onReady) {
 }
 
 /**
+ * Rejoin an already-running command after a page refresh or display reconnect.
+ * The persisted server timestamp lets the display seek to the point the other
+ * screens should currently be showing.
+ */
+export function recoverDisplayPlayback(display = {}) {
+  if (!display || display.mode !== 'now_singing') return;
+  const commandId = String(display.play_command_id || '');
+  if (!commandId || commandId === displayPlayer.recoveredCommandId) return;
+  displayPlayer.recoveredCommandId = commandId;
+
+  const manualUrl = display.manual_video_url || '';
+  const manualYtId = extractYouTubeId(manualUrl);
+  const manualFileUrl = isPlayableVideoFile(manualUrl) ? manualUrl : '';
+  const ytId = display.youtube_video_id || extractYouTubeId(display.youtube_url || '');
+  const videoUrl = display.song_video_url || '';
+  const info = manualYtId
+    ? { provider: 'youtube', youtubeVideoId: manualYtId, videoUrl: '' }
+    : manualFileUrl
+      ? { provider: 'self_hosted', youtubeVideoId: '', videoUrl: manualFileUrl }
+      : ytId
+        ? { provider: 'youtube', youtubeVideoId: ytId, videoUrl: '' }
+        : videoUrl
+          ? { provider: 'self_hosted', youtubeVideoId: '', videoUrl }
+          : { provider: 'none', youtubeVideoId: '', videoUrl: '' };
+
+  cueDisplayPlayer({ requestId: display.now_request_id, ...info }, () => {
+    const baseOffset = Number(display.play_offset_seconds) || 0;
+    if (display.play_state === 'paused' || display.play_state === 'cued') {
+      if (baseOffset > 0) seekDisplayPlayer(baseOffset);
+      return;
+    }
+    const startedAt = Number(display.play_started_at_ms) || Date.now();
+    const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+    playDisplayPlayerAt(Date.now() + 50, baseOffset + elapsed);
+  });
+}
+
+/**
  * Schedule synchronized playback at a server wall-clock time (ms).
  * offsetSeconds seeks to this position before playing.
  */
@@ -395,6 +643,7 @@ export function playDisplayPlayerAt(startAtServerMs, offsetSeconds = 0) {
   if (displayPlayer.cancelScheduled) { try { displayPlayer.cancelScheduled(); } catch (_) {} }
   displayPlayer.cancelScheduled = scheduleAt(startAtServerMs, () => {
     displayPlayer.actualStartMs = Date.now();
+    displayPlayer.pausedAtMs = null;
     startSyncedPlayback(offsetSeconds);
   });
 }
@@ -402,7 +651,8 @@ export function playDisplayPlayerAt(startAtServerMs, offsetSeconds = 0) {
 function startSyncedPlayback(offsetSeconds) {
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
     try {
-      displayPlayer.ytPlayer.mute(); // display pages stay muted
+      if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
       if (offsetSeconds > 0) displayPlayer.ytPlayer.seekTo(offsetSeconds, true);
       displayPlayer.ytPlayer.playVideo();
     } catch (_) {}
@@ -411,7 +661,8 @@ function startSyncedPlayback(offsetSeconds) {
   if (displayPlayer.provider === 'self_hosted') {
     const v = $('[data-display-video]');
     if (!v) return;
-    v.muted = true;
+    v.muted = !displayPlayer.audioUnlocked;
+    v.volume = displayPlayer.defaultVolume / 100;
     try { if (offsetSeconds > 0) v.currentTime = offsetSeconds; } catch (_) {}
     v.play().catch(() => {});
     startDriftCorrection(v, offsetSeconds);
@@ -485,6 +736,45 @@ export function stopDisplayPlayerPublic() {
   stopDisplayPlayer();
 }
 
+/** Pause the active player in place (does not clear cue/seek state). */
+export function pauseDisplayPlayer() {
+  if (displayPlayer.pausedAtMs === null) {
+    displayPlayer.pausedAtMs = Date.now();
+  }
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.pauseVideo(); } catch (_) {}
+    return;
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) v.pause();
+  }
+}
+
+/** Resume a paused player. */
+export function resumeDisplayPlayer() {
+  if (displayPlayer.pausedAtMs !== null && displayPlayer.actualStartMs !== null) {
+    displayPlayer.actualStartMs += Date.now() - displayPlayer.pausedAtMs;
+  }
+  displayPlayer.pausedAtMs = null;
+  if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
+    try {
+      if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
+      displayPlayer.ytPlayer.playVideo();
+    } catch (_) {}
+    return;
+  }
+  if (displayPlayer.provider === 'self_hosted') {
+    const v = $('[data-display-video]');
+    if (v) {
+      v.muted = !displayPlayer.audioUnlocked;
+      v.volume = displayPlayer.defaultVolume / 100;
+      v.play().catch(() => {});
+    }
+  }
+}
+
 function showEmptyPlayer(current) {
   const empty = $('[data-display-player-empty]');
   if (!empty) return;
@@ -507,7 +797,8 @@ function showSelfHostedVideo(src) {
     v.setAttribute('src', src);
   }
   v.hidden = false;
-  v.muted = true;
+  v.muted = !displayPlayer.audioUnlocked;
+  v.volume = displayPlayer.defaultVolume / 100;
   v.play().catch(() => {});
 }
 
@@ -529,13 +820,18 @@ function showYouTube(videoId) {
         height: '100%',
         width: '100%',
         videoId,
-        // Display screens stay muted permanently — no sound is needed on
-        // the remote TV, and unmuting programmatically is what invites
-        // Chromium's autoplay policy to silently pause playback. Staying
-        // muted keeps autoplay/loadVideoById reliably allowed.
-        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: 1 },
+        // Muted-by-default until a real tap unlocks audio (see
+        // unlockDisplayAudio) — that's what keeps autoplay/loadVideoById
+        // reliably allowed before the gesture happens.
+        playerVars: { autoplay: 1, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: displayPlayer.audioUnlocked ? 0 : 1 },
         events: {
-          onReady: e => { try { e.target.mute(); e.target.playVideo(); } catch (_) {} },
+          onReady: e => {
+            try {
+              if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+              e.target.setVolume(displayPlayer.defaultVolume);
+              e.target.playVideo();
+            } catch (_) {}
+          },
         },
       });
       return;
@@ -552,14 +848,18 @@ function showYouTube(videoId) {
       try {
         const state = displayPlayer.ytPlayer.getPlayerState();
         if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
-          displayPlayer.ytPlayer.mute();
+          if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+          displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
           displayPlayer.ytPlayer.playVideo();
         }
       } catch (_) {}
       return;
     }
 
-    try { displayPlayer.ytPlayer.mute(); } catch (_) {}
+    try {
+      if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
+    } catch (_) {}
     displayPlayer.ytPlayer.loadVideoById(videoId);
   });
 }

@@ -21,7 +21,12 @@ final class DisplayController
         $screen = self::resolveScreen($input['screen'] ?? null);
         DisplayService::update($db, (int)$session['id'], $input, $_SESSION['tenant_user']['id'] ?? null, $screen);
         $display = DisplayService::state($db, (int)$session['id'], $screen);
-        EventBus::publish($db, 'display:state_changed', ['screen' => $screen, 'display' => $display]);
+        EventBus::publish(
+            $db,
+            'display:state_changed',
+            ['screen' => $screen, 'display' => $display],
+            (int)$session['id'],
+        );
         Response::json(['display' => $display]);
     }
 
@@ -107,6 +112,20 @@ final class DisplayController
 
         $commandId = bin2hex(random_bytes(8)); // 16-char hex token
         $startAtServerMs = (int)(microtime(true) * 1000) + $startDelayMs;
+        $targets = $screen === 'all'
+            ? array_map(
+                'strval',
+                array_column(DisplayService::listScreens($db, (int)$session['id']), 'screen'),
+            )
+            : [$screen];
+        DisplayService::startPlayback(
+            $db,
+            (int)$session['id'],
+            $targets,
+            $commandId,
+            $startAtServerMs,
+            $offsetSeconds,
+        );
 
         // Determine video info for the cue event.
         $ytId = $req['youtube_video_id'] ?? null;
@@ -131,7 +150,7 @@ final class DisplayController
                 'youtubeVideoId' => $ytId ?? '',
                 'videoUrl' => (string)$videoUrl,
             ],
-        ]);
+        ], (int)$session['id']);
 
         // Publish display:play_at event (WS daemon pushes this to displays).
         EventBus::publish($db, 'display:play_at', [
@@ -140,25 +159,84 @@ final class DisplayController
             'commandId' => $commandId,
             'startAtServerMs' => $startAtServerMs,
             'offsetSeconds' => $offsetSeconds,
-        ]);
+        ], (int)$session['id']);
 
         Response::json(['commandId' => $commandId, 'startAtServerMs' => $startAtServerMs]);
     }
 
-    /** @param array<string,mixed> $tenant @param array<string,mixed> $session */
+    /**
+     * Show an announcement on one screen, or every configured screen when
+     * no screen (or "all") is given — the header "Send Announcement" and a
+     * per-display "Message" button both hit this endpoint.
+     *
+     * @param array<string,mixed> $tenant @param array<string,mixed> $session
+     */
     public static function announce(PDO $db, array $tenant, array $session): never
     {
         Auth::requireTenantRole('kj', 'tenant_admin');
-        $message = trim((string)(Request::input()['message'] ?? ''));
+        $input = Request::input();
+        $message = trim((string)($input['message'] ?? ''));
         if ($message === '' || strlen($message) > 500) {
             Response::json(['error' => 'Announcement message is required'], 400);
         }
+        $screen = preg_replace('/[^a-z0-9_-]/i', '', (string)($input['screen'] ?? 'all')) ?: 'all';
+
         $stmt = $db->prepare('INSERT INTO announcements (session_id, message, created_by) VALUES (?, ?, ?)');
         $stmt->execute([(int)$session['id'], $message, $_SESSION['tenant_user']['id'] ?? null]);
         $id = (int)$db->lastInsertId();
-        DisplayService::update($db, (int)$session['id'], ['mode' => 'announcement', 'announcement_id' => $id], $_SESSION['tenant_user']['id'] ?? null);
-        EventBus::publish($db, 'announcement:shown', ['id' => $id, 'message' => $message]);
-        EventBus::publish($db, 'display:state_changed', ['display' => DisplayService::state($db, (int)$session['id'])]);
+
+        $targets = $screen === 'all'
+            ? array_column(DisplayService::listScreens($db, (int)$session['id']), 'screen')
+            : [$screen];
+        foreach ($targets as $target) {
+            DisplayService::update(
+                $db,
+                (int)$session['id'],
+                ['mode' => 'announcement', 'announcement_id' => $id],
+                $_SESSION['tenant_user']['id'] ?? null,
+                (string)$target,
+            );
+            EventBus::publish($db, 'display:state_changed', [
+                'screen' => $target,
+                'display' => DisplayService::state($db, (int)$session['id'], (string)$target),
+            ], (int)$session['id']);
+        }
+        EventBus::publish(
+            $db,
+            'announcement:shown',
+            ['id' => $id, 'message' => $message, 'screen' => $screen],
+            (int)$session['id'],
+        );
         Response::json(['id' => $id, 'announcement_id' => $id]);
+    }
+
+    /**
+     * Pause or resume playback on one screen or every screen. Screens
+     * already receive every EventBus event as a generic `{type:'event'}`
+     * push (over WS or short-poll), so no daemon changes are needed —
+     * display.js just needs to react to display:pause / display:resume.
+     *
+     * @param array<string,mixed> $tenant @param array<string,mixed> $session
+     */
+    public static function pause(PDO $db, array $tenant, array $session): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+        $input = Request::input();
+        $screen = preg_replace('/[^a-z0-9_-]/i', '', (string)($input['screen'] ?? 'all')) ?: 'all';
+        $paused = !empty($input['paused']);
+        $targets = $screen === 'all'
+            ? array_map(
+                'strval',
+                array_column(DisplayService::listScreens($db, (int)$session['id']), 'screen'),
+            )
+            : [$screen];
+        DisplayService::setPlaybackPaused($db, (int)$session['id'], $targets, $paused);
+        EventBus::publish(
+            $db,
+            $paused ? 'display:pause' : 'display:resume',
+            ['screen' => $screen],
+            (int)$session['id'],
+        );
+        Response::json(['ok' => true, 'paused' => $paused, 'screen' => $screen]);
     }
 }

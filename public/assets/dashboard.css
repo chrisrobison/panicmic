@@ -1,0 +1,228 @@
+/* dashboard.css — KJ Command Center (admin-dashboard page only).
+ * Loaded after app.css; reuses its tokens (--bg/--surface/--border/--text/
+ * --muted/--primary/--accent/--ok/--warning/--danger) so tenant branding
+ * still propagates. Adds a few fixed semantic colors for badges/status
+ * dots that shouldn't shift with a tenant's brand color.
+ */
+
+:root {
+  --chip-vip: #f5b93f;
+  --chip-duo: #a78bfa;
+  --chip-new: #34d0c6;
+  --status-online: #22c55e;
+  --status-offline: #6b7280;
+}
+
+.kj-console { display: flex; flex-direction: column; gap: 16px; }
+
+/* ---------- Header toolbar ---------- */
+.kj-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.kj-toolbar-search { flex: 1 1 220px; min-width: 180px; }
+.kj-toolbar-search input { margin: 0; }
+.kj-toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.kj-toolbar-actions button { width: auto; padding: 10px 14px; white-space: nowrap; }
+.kj-toolbar-actions button.ok { background: var(--ok); border-color: var(--ok); color: #07100d; }
+.kj-toolbar-actions button.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+.kj-toolbar-actions button[data-paused="1"] { background: var(--accent); border-color: var(--accent); color: #201a03; }
+.kj-toolbar-meta { display: flex; align-items: center; gap: 14px; margin-left: auto; }
+.kj-displays-connected { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.kj-displays-connected strong { color: var(--text); }
+
+.kj-menu { position: relative; }
+.kj-menu > summary { list-style: none; cursor: pointer; padding: 10px 14px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); width: auto; font-weight: 700; }
+.kj-menu > summary::-webkit-details-marker { display: none; }
+.kj-menu > summary::after { content: ' ▾'; }
+.kj-menu[open] > summary::after { content: ' ▴'; }
+.kj-menu-panel { position: absolute; right: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: grid; gap: 2px; min-width: 180px; z-index: 20; }
+.kj-menu-panel a { padding: 8px 10px; border-radius: 6px; color: var(--text); }
+.kj-menu-panel a:hover { background: var(--surface-2); }
+
+/* ---------- Stat tiles ---------- */
+.admin-stats { grid-template-columns: repeat(5, minmax(90px, 1fr)); }
+
+/* ---------- Three-column body ---------- */
+.kj-columns {
+  display: grid;
+  grid-template-columns: minmax(260px, 22%) minmax(380px, 1fr) minmax(300px, 26%);
+  gap: 16px;
+  align-items: start;
+}
+.kj-col { display: flex; flex-direction: column; gap: 16px; }
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.panel-head h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; margin: 0; display: flex; align-items: center; gap: 8px; }
+.panel-head-meta { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.panel-head-meta button { width: auto; padding: 7px 10px; font-size: 12px; }
+.count-badge { background: var(--surface-2); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 800; border-radius: 999px; padding: 1px 8px; }
+
+/* ---------- Incoming requests ---------- */
+.kj-incoming { max-height: 78vh; display: flex; flex-direction: column; }
+.incoming-list { display: grid; gap: 10px; overflow-y: auto; padding-right: 2px; }
+.incoming-item { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+.incoming-item-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.incoming-name { flex: 1 1 auto; }
+.incoming-time { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.incoming-song { margin: 0; font-weight: 600; }
+.incoming-artist { margin: 0; font-size: 13px; }
+.incoming-actions { display: flex; gap: 6px; margin-top: 6px; }
+.icon-btn { width: auto; padding: 6px 12px; font-size: 15px; line-height: 1; border-radius: 6px; }
+.icon-btn.ok { background: rgba(34,197,94,.15); border-color: var(--ok); color: #6ee7a7; }
+.icon-btn.danger { background: rgba(239,68,68,.12); border-color: var(--danger); color: #fca5a5; }
+.auto-accept-row { display: flex; align-items: center; gap: 8px; width: auto; color: var(--muted); font-size: 13px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.auto-accept-row input { width: auto; }
+.settings-gear { margin-left: auto; color: var(--muted); font-size: 16px; }
+
+/* ---------- Badges / chips ---------- */
+.chip { display: inline-flex; align-items: center; font-size: 10px; font-weight: 800; letter-spacing: .03em; border-radius: 999px; padding: 2px 8px; text-transform: uppercase; }
+.chip-vip { background: rgba(245, 185, 63, .18); color: var(--chip-vip); border: 1px solid rgba(245, 185, 63, .5); }
+.chip-duo { background: rgba(167, 139, 250, .18); color: var(--chip-duo); border: 1px solid rgba(167, 139, 250, .5); }
+.chip-new { background: rgba(52, 208, 198, .16); color: var(--chip-new); border: 1px solid rgba(52, 208, 198, .5); }
+.chip-live { background: rgba(34, 197, 94, .18); color: #6ee7a7; border: 1px solid rgba(34, 197, 94, .5); }
+.chip-next { background: rgba(245, 158, 11, .16); color: #fcd34d; border: 1px solid rgba(245, 158, 11, .5); }
+
+/* ---------- Rotation queue ---------- */
+.kj-rotation { display: flex; flex-direction: column; }
+.kj-rotation .queue-board { max-height: 56vh; overflow-y: auto; padding-right: 2px; }
+.queue-item {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.queue-item-drag { cursor: grab; color: var(--muted); font-size: 16px; }
+.queue-item-pos { font-weight: 800; color: var(--muted); min-width: 1.4em; text-align: center; }
+.queue-item-body { display: grid; gap: 2px; min-width: 0; }
+.queue-item-singer-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.queue-item-song { margin: 0; }
+.queue-item.status-now_singing { background: linear-gradient(90deg, rgba(34,197,94,.10), transparent 60%); }
+.queue-item-menu { position: relative; }
+.queue-item-menu > summary { list-style: none; cursor: pointer; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); font-size: 18px; }
+.queue-item-menu > summary::-webkit-details-marker { display: none; }
+.queue-item-menu-panel { position: absolute; right: 0; top: calc(100% + 6px); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; display: grid; gap: 6px; min-width: 170px; z-index: 15; }
+.queue-item-menu-panel button { width: 100%; }
+.rotation-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 13px; }
+.reorder-mode .queue-item-drag { color: var(--accent); }
+
+/* ---------- Now playing ---------- */
+.now-playing { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.now-playing-art { width: 56px; height: 56px; border-radius: 8px; background: var(--surface-2); display: grid; place-items: center; font-size: 26px; flex: 0 0 auto; }
+.now-playing-info { display: grid; gap: 2px; flex: 1 1 200px; min-width: 0; }
+.now-playing-info strong { font-size: 17px; }
+.now-playing-transport { display: flex; align-items: center; gap: 8px; }
+.now-playing-transport button { width: auto; padding: 10px 14px; border-radius: 999px; }
+.now-playing-elapsed { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 3.5em; }
+
+/* ---------- Crowd preview ---------- */
+.live-dot { color: var(--ok); font-size: 12px; font-weight: 800; }
+.crowd-preview-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #000;
+}
+/* The live display page is a full-size 1280x720 layout; scale it down into
+   the thumbnail frame rather than re-implementing a second renderer. The
+   fixed scale is an approximation of the column's typical width — a little
+   over/under-scan at extreme viewport widths is an acceptable tradeoff.
+   Clickable (not pointer-events:none) so a KJ whose machine feeds the
+   soundboard directly can tap the sound-unlock overlay right here instead
+   of needing a separate popped-out Mirror window — the display page has
+   nothing else interactive to worry about triggering by accident. CSS
+   transform scaling doesn't affect hit-testing; the browser maps clicks
+   back through the transform to the right element automatically. */
+.crowd-preview-frame iframe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 357.143%;
+  height: 357.143%;
+  border: 0;
+  transform: scale(.28);
+  transform-origin: top left;
+}
+
+/* ---------- Connected displays ---------- */
+.connected-displays > div { display: grid; gap: 10px; }
+.display-card { border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 10px 12px; display: grid; gap: 8px; }
+.display-card-head { display: flex; align-items: center; gap: 8px; }
+.display-card-layout { margin-left: auto; text-transform: capitalize; font-size: 12px; }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.status-dot.online { background: var(--status-online); box-shadow: 0 0 6px var(--status-online); }
+.status-dot.offline { background: var(--status-offline); }
+.display-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.display-card-actions button, .display-card-actions select { width: auto; padding: 6px 10px; font-size: 12px; }
+
+/* ---------- Announcement + activity ---------- */
+.announcement-panel textarea { margin-bottom: 8px; resize: vertical; }
+.activity-log > div { display: grid; gap: 6px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
+.activity-row { display: grid; grid-template-columns: 60px 1fr; gap: 8px; font-size: 13px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.activity-row time { color: var(--muted); white-space: nowrap; }
+
+/* ---------- Session / QR (collapsed by default) ---------- */
+.session-panel { padding: 14px 16px; }
+.session-panel > summary { cursor: pointer; font-weight: 700; list-style: none; }
+.session-panel > summary::-webkit-details-marker { display: none; }
+.session-panel > summary::before { content: '▸ '; color: var(--muted); }
+.session-panel[open] > summary::before { content: '▾ '; }
+.session-panel-body { display: grid; gap: 12px; margin-top: 12px; }
+.session-panel-body .qr-widget { display: flex; gap: 12px; align-items: center; }
+.session-panel-body .qr-image svg { width: 72px; height: 72px; }
+
+/* ---------- Footer status bar ---------- */
+.kj-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.status-dot-label.status-ok { color: var(--ok); }
+.status-dot-label.status-warn { color: var(--warning); }
+
+/* ---------- Add Request modal ---------- */
+.add-request-modal {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 20px;
+  width: min(480px, 92vw);
+}
+.add-request-modal::backdrop { background: rgba(4, 6, 10, .72); }
+.add-request-modal form { display: grid; gap: 12px; }
+.add-request-modal .song-results { max-height: 220px; overflow-y: auto; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-actions button { width: auto; padding: 10px 16px; }
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1500px) and (min-width: 1101px) {
+  .kj-columns { grid-template-columns: minmax(260px, 34%) minmax(420px, 1fr); }
+  .kj-side {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .kj-side .session-panel { grid-column: 1 / -1; }
+}
+@media (max-width: 1100px) {
+  .kj-columns { grid-template-columns: 1fr; }
+  .kj-side { display: flex; }
+  .kj-incoming, .kj-rotation .queue-board { max-height: none; }
+}
+@media (max-width: 640px) {
+  .admin-stats { grid-template-columns: repeat(2, 1fr); }
+  .kj-toolbar-actions button { flex: 1 1 45%; }
+}

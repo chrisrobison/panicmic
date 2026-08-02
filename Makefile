@@ -24,7 +24,7 @@ CHECKSUM_FILE  := $(TOOLS_DIR)/checksums.sha256
 
 PHP_SOURCES    := $(shell find src public scripts -type f -name '*.php' 2>/dev/null)
 
-.PHONY: help tools lint stan test check clean-tools pin-checksums
+.PHONY: help tools lint stan test test-browser check clean-tools pin-checksums
 
 help:
 	@echo 'Targets:'
@@ -33,6 +33,7 @@ help:
 	@echo '  make lint           php -l across src/, public/, scripts/'
 	@echo '  make stan           static analysis via phpstan'
 	@echo '  make test           run phpunit'
+	@echo '  make test-browser   run Playwright browser smoke tests'
 	@echo '  make check          lint + stan + test (CI runs this)'
 	@echo '  make clean-tools    remove ./tools/'
 
@@ -106,6 +107,9 @@ stan: $(PHPSTAN)
 
 test: $(PHPUNIT)
 	@$(PHP) $(PHPUNIT)
+
+test-browser:
+	@npm run test:browser
 
 check: lint stan test
 

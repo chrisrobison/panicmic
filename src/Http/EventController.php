@@ -77,7 +77,7 @@ final class EventController
         }
         $name = trim((string)$event['name']) ?: (string)($tenant['night_name'] ?? 'Karaoke Night');
         $newSession = SessionService::start($db, $name, (int)$event['venue_id'], $id);
-        EventBus::publish($db, 'session:started', ['session' => $newSession]);
+        EventBus::publish($db, 'session:started', ['session' => $newSession], (int)$newSession['id']);
         Response::json(['session' => $newSession]);
     }
 

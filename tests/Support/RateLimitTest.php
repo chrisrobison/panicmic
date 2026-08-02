@@ -68,4 +68,16 @@ final class RateLimitTest extends DatabaseTestCase
         $other = Security::signupBucket('203.0.113.51');
         self::assertSame(1, Security::rateLimitDb($this->superDb, $other, 10, 3600));
     }
+
+    public function testPublicRequestBucketIsScopedByTenantAndIp(): void
+    {
+        self::assertSame(
+            'request:42:203.0.113.50',
+            Security::publicRequestBucket(42, '203.0.113.50'),
+        );
+        self::assertNotSame(
+            Security::publicRequestBucket(42, '203.0.113.50'),
+            Security::publicRequestBucket(43, '203.0.113.50'),
+        );
+    }
 }

@@ -35,6 +35,28 @@ final class EventBusTest extends DatabaseTestCase
         self::assertSame([], EventBus::after($this->tenantDb, $id));
     }
 
+    public function testSessionFeedIncludesGlobalEventsAndExcludesOtherSessions(): void
+    {
+        $this->tenantDb->exec(
+            "INSERT INTO karaoke_sessions (name, starts_at, status)
+             VALUES ('Other Session', NOW(), 'live')"
+        );
+        $otherSessionId = (int)$this->tenantDb->lastInsertId();
+
+        EventBus::publish($this->tenantDb, 'settings:updated', []);
+        EventBus::publish($this->tenantDb, 'queue:updated', ['room' => 'ours'], $this->sessionId);
+        EventBus::publish($this->tenantDb, 'queue:updated', ['room' => 'other'], $otherSessionId);
+
+        $events = EventBus::after($this->tenantDb, 0, $this->sessionId);
+        self::assertSame(
+            ['settings:updated', 'queue:updated'],
+            array_column($events, 'event_name'),
+        );
+        self::assertNull($events[0]['session_id']);
+        self::assertSame($this->sessionId, $events[1]['session_id']);
+        self::assertSame('ours', $events[1]['payload']['room']);
+    }
+
     public function testPublishPrunesOldEvents(): void
     {
         // Insert an "old" event with backdated created_at (1 day ago).

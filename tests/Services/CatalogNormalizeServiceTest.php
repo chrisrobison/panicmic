@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace PanicMic\Tests\Services;
 
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PanicMic\Services\CatalogNormalizeService;
 
 final class CatalogNormalizeServiceTest extends TestCase
 {
-    /** @dataProvider normalizationProvider */
+    #[DataProvider('normalizationProvider')]
     public function testNormalize(string $input, string $expected): void
     {
         self::assertSame($expected, CatalogNormalizeService::normalize($input));

@@ -13,14 +13,16 @@ final class QueueService
     {
         $stmt = $db->prepare(
             "SELECT qi.id queue_item_id, qi.position, qi.status queue_status,
-                    sr.id request_id, sr.party_type, sr.notes, sr.status request_status, sr.created_at,
+                    sr.id request_id, sr.party_type, sr.notes, sr.status request_status, sr.created_at, sr.updated_at status_updated_at,
+                    sr.reviewed_at, sr.is_priority,
                     sr.youtube_video_id, sr.youtube_title, sr.youtube_channel_title, sr.youtube_url, sr.youtube_matched_at,
                     sr.manual_video_url, sr.manual_video_attached_at,
                     sr.song_id, sr.shared_song_id,
                     s.id singer_id, s.display_name singer_name,
                     songs.title local_title, songs.artist local_artist, songs.genre local_genre, songs.decade local_decade,
                     songs.album local_album, songs.album_art_url local_album_art_url,
-                    songs.video_url local_video_url, songs.provider_url local_provider_url, songs.video_provider local_video_provider
+                    songs.video_url local_video_url, songs.provider_url local_provider_url, songs.video_provider local_video_provider,
+                    (SELECT COUNT(*) FROM song_requests sr2 WHERE sr2.singer_id = sr.singer_id AND sr2.session_id = qi.session_id) singer_request_count
              FROM queue_items qi
              JOIN song_requests sr ON sr.id = qi.request_id
              JOIN singers s ON s.id = sr.singer_id
@@ -53,9 +55,13 @@ final class QueueService
             $row['provider_url'] = $row['local_provider_url'] ?? null;
             $row['video_provider'] = $row['local_video_provider'] ?? null;
             $row['song_source'] = !empty($row['song_id']) ? 'local' : (!empty($row['shared_song_id']) ? 'shared' : null);
+            $row['is_new'] = ((int)($row['singer_request_count'] ?? 0)) <= 1;
+            $row['is_priority'] = !empty($row['is_priority']);
+            $row['is_incoming'] = $row['queue_status'] === 'pending' && empty($row['reviewed_at']);
             unset($row['local_title'], $row['local_artist'], $row['local_genre'], $row['local_decade'],
                   $row['local_album'], $row['local_album_art_url'],
-                  $row['local_video_url'], $row['local_provider_url'], $row['local_video_provider']);
+                  $row['local_video_url'], $row['local_provider_url'], $row['local_video_provider'],
+                  $row['singer_request_count']);
             return $row;
         }, $rows);
     }
@@ -130,6 +136,15 @@ final class QueueService
         }
 
         return self::tx($db, function () use ($db, $sessionId, $data, $requesterToken, $preventDuplicate, $songId, $sharedSongId): int {
+            // Serialize submissions for one karaoke session. This makes both
+            // duplicate-name checks and MAX(position)+1 atomic under
+            // concurrent public requests.
+            $sessionLock = $db->prepare('SELECT id FROM karaoke_sessions WHERE id = ? FOR UPDATE');
+            $sessionLock->execute([$sessionId]);
+            if (!$sessionLock->fetchColumn()) {
+                throw new \InvalidArgumentException('The karaoke session no longer exists');
+            }
+
             if ($preventDuplicate) {
                 // Limit is per singer name, not per device. This lets a shared
                 // device (kiosk/iPad) serve multiple singers without blocking
@@ -174,7 +189,9 @@ final class QueueService
             ]);
             $requestId = (int)$db->lastInsertId();
 
-            $position = (int)$db->query("SELECT COALESCE(MAX(position), 0) + 1 next_position FROM queue_items WHERE session_id = {$sessionId}")->fetchColumn();
+            $nextPosition = $db->prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM queue_items WHERE session_id = ?');
+            $nextPosition->execute([$sessionId]);
+            $position = (int)$nextPosition->fetchColumn();
             $stmt = $db->prepare('INSERT INTO queue_items (session_id, request_id, position) VALUES (?, ?, ?)');
             $stmt->execute([$sessionId, $requestId, $position]);
             return $requestId;
@@ -220,12 +237,99 @@ final class QueueService
     public static function reorder(PDO $db, int $sessionId, array $requestIds): void
     {
         self::tx($db, function () use ($db, $sessionId, $requestIds): void {
-            $stmt = $db->prepare('UPDATE queue_items SET position = ? WHERE session_id = ? AND request_id = ?');
-            $position = 1;
-            foreach ($requestIds as $requestId) {
-                $stmt->execute([$position++, $sessionId, $requestId]);
-            }
+            self::applyOrder($db, $sessionId, $requestIds);
         });
+    }
+
+    /**
+     * Approve a pending, unreviewed request into the rotation queue.
+     * With $fastTrack, it's also moved to the front of the line (right
+     * behind whatever's already up next / singing) instead of keeping its
+     * arrival-order position. Returns false if the request isn't a
+     * still-pending, unreviewed one in this session.
+     */
+    public static function approve(PDO $db, int $sessionId, int $requestId, bool $fastTrack = false): bool
+    {
+        return self::tx($db, function () use ($db, $sessionId, $requestId, $fastTrack): bool {
+            $exists = $db->prepare(
+                "SELECT 1 FROM song_requests WHERE id = ? AND session_id = ? AND status = 'pending' AND reviewed_at IS NULL LIMIT 1"
+            );
+            $exists->execute([$requestId, $sessionId]);
+            if (!$exists->fetchColumn()) {
+                return false;
+            }
+            $db->prepare('UPDATE song_requests SET reviewed_at = NOW() WHERE id = ? AND session_id = ?')
+               ->execute([$requestId, $sessionId]);
+
+            if ($fastTrack) {
+                $ids = $db->prepare('SELECT request_id FROM queue_items WHERE session_id = ? ORDER BY position ASC');
+                $ids->execute([$sessionId]);
+                /** @var list<int> $order */
+                $order = array_map('intval', $ids->fetchAll(PDO::FETCH_COLUMN));
+                $order = array_values(array_filter($order, static fn (int $id): bool => $id !== $requestId));
+                array_unshift($order, $requestId);
+                self::applyOrder($db, $sessionId, $order);
+            }
+            return true;
+        });
+    }
+
+    /** Toggle the KJ-facing VIP/priority badge on a request. */
+    public static function setPriority(PDO $db, int $sessionId, int $requestId, bool $priority): bool
+    {
+        $stmt = $db->prepare('UPDATE song_requests SET is_priority = ? WHERE id = ? AND session_id = ?');
+        $stmt->execute([$priority ? 1 : 0, $requestId, $sessionId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    /**
+     * Assign 1..N positions to the given request ids, in that order.
+     * Setting final positions directly, one row at a time, can trip the
+     * (session_id, position) unique index whenever the new order isn't a
+     * pure append (e.g. swapping two adjacent rows collides with whichever
+     * row hasn't moved yet). Bumping every row out of the target range
+     * first guarantees no intermediate collision.
+     *
+     * @param list<int> $requestIds
+     */
+    private static function applyOrder(PDO $db, int $sessionId, array $requestIds): void
+    {
+        $current = $db->prepare(
+            'SELECT request_id FROM queue_items WHERE session_id = ? ORDER BY position ASC FOR UPDATE'
+        );
+        $current->execute([$sessionId]);
+        /** @var list<int> $existing */
+        $existing = array_map('intval', $current->fetchAll(PDO::FETCH_COLUMN));
+        if (!$existing) {
+            return;
+        }
+
+        $valid = array_fill_keys($existing, true);
+        $seen = [];
+        $order = [];
+        foreach ($requestIds as $requestId) {
+            $requestId = (int)$requestId;
+            if (isset($valid[$requestId]) && !isset($seen[$requestId])) {
+                $order[] = $requestId;
+                $seen[$requestId] = true;
+            }
+        }
+        // A stale browser may omit a request that arrived moments earlier.
+        // Keep those items in their prior relative order instead of leaving
+        // them at an ever-growing temporary position.
+        foreach ($existing as $requestId) {
+            if (!isset($seen[$requestId])) {
+                $order[] = $requestId;
+            }
+        }
+
+        $db->prepare('UPDATE queue_items SET position = position + 1000000 WHERE session_id = ?')
+           ->execute([$sessionId]);
+        $stmt = $db->prepare('UPDATE queue_items SET position = ? WHERE session_id = ? AND request_id = ?');
+        $position = 1;
+        foreach ($order as $requestId) {
+            $stmt->execute([$position++, $sessionId, $requestId]);
+        }
     }
 
     private static function tx(PDO $db, callable $callback): mixed

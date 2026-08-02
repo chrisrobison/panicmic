@@ -39,7 +39,7 @@ final class SessionController
             Response::json(['error' => 'Session name is required'], 400);
         }
         $newSession = SessionService::start($db, $name, $venueId, $eventId);
-        EventBus::publish($db, 'session:started', ['session' => $newSession]);
+        EventBus::publish($db, 'session:started', ['session' => $newSession], (int)$newSession['id']);
         Response::json(['session' => $newSession]);
     }
 
@@ -50,9 +50,9 @@ final class SessionController
         $sessionId = (int)$session['id'];
         SessionService::end($db, $sessionId, $_SESSION['tenant_user']['id'] ?? null);
         $stats = SessionService::statsFor($db, $sessionId);
-        EventBus::publish($db, 'session:ended', ['session_id' => $sessionId, 'stats' => $stats]);
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())]);
-        EventBus::publish($db, 'display:state_changed', ['display' => DisplayService::state($db, $sessionId)]);
+        EventBus::publish($db, 'session:ended', ['session_id' => $sessionId, 'stats' => $stats], $sessionId);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
+        EventBus::publish($db, 'display:state_changed', ['display' => DisplayService::state($db, $sessionId)], $sessionId);
         Response::json(['ok' => true, 'stats' => $stats]);
     }
 }

@@ -123,7 +123,7 @@ function publicSongButton(song) {
 }
 
 function providerOptions(selected) {
-  return ['', 'youtube', 'karafun', 'stingray', 'singa', 'local'].map(provider => {
+  return ['', 'youtube', 'karafun', 'stingray', 'singa', 'self_hosted', 'local'].map(provider => {
     const label = provider === '' ? 'Custom / none' : provider;
     return `<option value="${provider}" ${provider === (selected || '') ? 'selected' : ''}>${label}</option>`;
   }).join('');
@@ -157,7 +157,11 @@ function adminSongCard(song) {
         <label>Genre<input name="genre" value="${escapeHtml(song.genre || '')}"></label>
         <label>Decade<input name="decade" type="number" min="1900" max="2090" step="10" value="${escapeHtml(song.decade || '')}"></label>
         <label>Popularity<input name="popularity" type="number" min="0" value="${escapeHtml(song.popularity || 0)}"></label>
-        <label>Video URL<input name="video_url" type="url" value="${escapeHtml(song.video_url || '')}"></label>
+        <label>Video URL<input name="video_url" value="${escapeHtml(song.video_url || '')}"></label>
+        <label>Upload karaoke video
+          <input type="file" name="video_file" accept="video/mp4,video/webm,video/quicktime">
+          <button type="button" class="secondary" data-upload-video="${song.id}">Upload &amp; attach</button>
+        </label>
         <label>Provider<select name="video_provider">${providerOptions(song.video_provider)}</select></label>
         <label>Provider track ID<input name="provider_track_id" value="${escapeHtml(song.provider_track_id || '')}"></label>
         <label>Provider URL<input name="provider_url" type="url" value="${escapeHtml(song.provider_url || '')}"></label>

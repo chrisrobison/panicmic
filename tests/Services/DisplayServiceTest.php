@@ -89,12 +89,14 @@ final class DisplayServiceTest extends DatabaseTestCase
         ]);
 
         $screens = DisplayService::listScreens($this->tenantDb, $this->sessionId);
-        self::assertCount(1, $screens);
-        self::assertSame('lobby', $screens[0]['screen']);
-        self::assertSame('Lobby TV', $screens[0]['label']);
+        self::assertCount(2, $screens);
+        self::assertSame('main', $screens[0]['screen']);
+        self::assertSame('lobby', $screens[1]['screen']);
+        self::assertSame('Lobby TV', $screens[1]['label']);
 
         DisplayService::removeScreen($this->tenantDb, $this->sessionId, 'lobby');
         $screens = DisplayService::listScreens($this->tenantDb, $this->sessionId);
+        self::assertCount(1, $screens);
         self::assertSame('main', $screens[0]['screen']);
     }
 }

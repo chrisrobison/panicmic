@@ -15,9 +15,14 @@ import {
   playDisplayPlayerAt,
   getDisplayPlayerStatus,
   setScheduler,
+  pauseDisplayPlayer,
+  resumeDisplayPlayer,
+  unlockDisplayAudio,
+  enableSynchronizedPlayback,
+  recoverDisplayPlayback,
 } from '../lib/queue.js';
 import { broadcast } from '../lib/broadcast.js';
-import { startRealtime, sendDisplayReady, sendDisplayStatus, onMessage, scheduleAtServerTime } from '../lib/ws.js';
+import { startRealtime, sendDisplayReady, sendDisplayStatus, onMessage, scheduleAtServerTime, isConnected } from '../lib/ws.js';
 
 function startDisplayBroadcastListener() {
   broadcast.subscribe(async data => {
@@ -37,12 +42,45 @@ function startDisplayBroadcastListener() {
 export function init() {
   // Let queue.js schedule synchronized playback against server time.
   setScheduler(scheduleAtServerTime);
+  enableSynchronizedPlayback();
+
+  // Sound is muted until this real click/tap happens — required by every
+  // browser's autoplay policy. Once unlocked it stays unlocked for the
+  // rest of this page's life (until reloaded), so this only needs to fire
+  // once per display session.
+  const audioUnlockButton = document.querySelector('[data-display-audio-unlock]');
+  audioUnlockButton?.addEventListener('click', () => {
+    unlockDisplayAudio();
+    audioUnlockButton.hidden = true;
+  });
 
   // BroadcastChannel listener (same-browser fast path — unchanged).
   startDisplayBroadcastListener();
 
-  // Realtime: prefers WS, falls back to short-poll.
-  startRealtime(() => {
+  // Realtime: prefers WS, falls back to short-poll. Every EventBus event
+  // (WS daemon or short-poll fallback, same shape either way) also flows
+  // through here, so display:pause/display:resume from the KJ console's
+  // "Pause" button are picked up without any daemon-side special-casing.
+  startRealtime(events => {
+    for (const e of events || []) {
+      const screen = e.payload?.screen || 'all';
+      if (screen !== 'all' && screen !== appConfig.screen) continue;
+      if (e.event_name === 'display:pause') pauseDisplayPlayer();
+      if (e.event_name === 'display:resume') resumeDisplayPlayer();
+      // With WebSockets, typed cue/play-at messages follow the generic event
+      // and are handled below. Polling has no typed channel, so translate the
+      // same persisted events here.
+      if (!isConnected() && e.event_name === 'display:cue') {
+        const video = e.payload?.video || {};
+        cueDisplayPlayer({ requestId: e.payload?.requestId, ...video });
+      }
+      if (!isConnected() && e.event_name === 'display:play_at') {
+        playDisplayPlayerAt(
+          Number(e.payload?.startAtServerMs) || Date.now(),
+          Number(e.payload?.offsetSeconds) || 0,
+        );
+      }
+    }
     loadQueue().catch(() => {});
   });
 
@@ -75,5 +113,5 @@ export function init() {
   }, 2000);
 
   // Initial load.
-  loadQueue().catch(() => {});
+  loadQueue().then(data => recoverDisplayPlayback(data.display || {})).catch(() => {});
 }

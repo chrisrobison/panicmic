@@ -1,11 +1,18 @@
-/* pages/admin-dashboard.js — KJ dashboard (queue, session, display, settings). */
+/* pages/admin-dashboard.js — KJ Command Center (queue, session, display, settings).
+ *
+ * Shared across admin-dashboard, admin-login, admin-content, admin-settings
+ * (see main.js's PAGES map) — every selector below is guarded with `?.` or
+ * an early return so sections belonging to other pages are silently
+ * skipped.
+ */
 
 import { $, $$, setStatus, formData, escapeHtml } from '../lib/dom.js';
 import { api, url, appConfig } from '../lib/api.js';
-import { loadQueue } from '../lib/queue.js';
+import { loadQueue, elapsedLabel } from '../lib/queue.js';
 import { startEvents } from '../lib/events.js';
-import { startRealtime, onMessage } from '../lib/ws.js';
-import { broadcast, broadcastDisplayCommand } from '../lib/broadcast.js';
+import { startRealtime, onMessage, isConnected } from '../lib/ws.js';
+import { broadcastDisplayCommand } from '../lib/broadcast.js';
+import { searchSongs } from '../lib/catalog.js';
 
 const displayWindows = new Map();
 
@@ -13,12 +20,30 @@ const displayWindows = new Map();
 // display:ready / display:status messages when the daemon is running.
 const displayPresence = new Map();
 
+// Last-known now-singing item, used to tick the elapsed-time readouts
+// between full queue reloads.
+let nowSinging = null;
+let displayPaused = false;
+
 async function loadDisplayScreens() {
   try {
     const { screens = [] } = await api('/api/display/screens');
-    renderDisplayWindowsToolbar(screens);
+    renderConnectedDisplays(screens);
     renderDisplayScreensSettings(screens);
-  } catch (_) { /* not authorized on this page */ }
+    syncContentSelects(screens);
+    return screens;
+  } catch (_) { return []; } // not authorized on this page
+}
+
+/** Pre-select each display card's Content dropdown to reflect its actual current mode. */
+async function syncContentSelects(screens) {
+  await Promise.all(screens.map(async s => {
+    try {
+      const { display } = await api(`/api/display/state?screen=${encodeURIComponent(s.screen)}`);
+      const select = $(`[data-content-screen="${s.screen}"]`);
+      if (select && display?.mode) select.value = display.mode;
+    } catch (_) { /* leave default */ }
+  }));
 }
 
 function renderDisplayScreensSettings(screens) {
@@ -34,16 +59,44 @@ function renderDisplayScreensSettings(screens) {
   `).join('') || '<p class="muted">No custom screens yet. The default "main" screen is always available.</p>';
 }
 
-function renderDisplayWindowsToolbar(screens) {
-  const container = $('[data-display-windows]');
+const CONTENT_MODES = [
+  ['idle', 'Idle'], ['queue', 'Queue'], ['now_singing', 'Now Singing'],
+  ['clean_stage', 'Clean Stage'], ['announcement', 'Announcement'], ['blackout', 'Blackout'],
+];
+
+/** Connected Displays panel: one card per configured screen, with live presence + per-screen controls. */
+function renderConnectedDisplays(screens) {
+  const container = $('[data-connected-displays]');
+  const now = Date.now();
+  const connected = screens.filter(s => {
+    const info = displayPresence.get(s.screen);
+    return info && (now - info.lastSeen) < 15000;
+  });
+  const countLabel = String(connected.length);
+  $$('[data-displays-connected-count]').forEach(el => { el.textContent = countLabel; });
+  $$('[data-displays-count]').forEach(el => { el.textContent = countLabel; });
+
   if (!container) return;
-  const buttons = screens.map(s => `
-    <button type="button" data-open-display="${escapeHtml(s.screen)}" title="${escapeHtml(s.label)} (${escapeHtml(s.layout)})">
-      ⧉ ${escapeHtml(s.label)}
-    </button>
-  `).join('');
-  container.innerHTML = `<span class="muted">Displays:</span> ${buttons}
-    <button type="button" data-cue-all class="primary" title="Cue current up-next on all screens">▶ Cue & Play</button>`;
+  container.innerHTML = screens.map(s => {
+    const info = displayPresence.get(s.screen);
+    const online = info && (now - info.lastSeen) < 15000;
+    return `
+    <article class="display-card" data-screen-card="${escapeHtml(s.screen)}">
+      <div class="display-card-head">
+        <span class="status-dot ${online ? 'online' : 'offline'}"></span>
+        <strong>${escapeHtml(s.label)}</strong>
+        <span class="muted display-card-layout">${escapeHtml(s.layout)}</span>
+      </div>
+      <div class="display-card-actions">
+        <button type="button" data-mirror="${escapeHtml(s.screen)}">⧉ Mirror</button>
+        <button type="button" data-message-screen="${escapeHtml(s.screen)}">✉ Message</button>
+        <button type="button" data-blackout-screen="${escapeHtml(s.screen)}">⛔ Blackout</button>
+        <select data-content-screen="${escapeHtml(s.screen)}" title="Set content">
+          ${CONTENT_MODES.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
+        </select>
+      </div>
+    </article>`;
+  }).join('') || '<p class="muted">No displays configured yet.</p>';
 }
 
 async function openDisplayWindow(screen) {
@@ -67,42 +120,29 @@ async function openDisplayWindow(screen) {
   if (popup) displayWindows.set(screen, popup);
 }
 
-async function cueAndPlayAll() {
+/** "Start Song" — promote the next singer and trigger synchronized playback on every screen. */
+async function startNextSong() {
   const data = await loadQueue();
-  const next = data.queue.find(item => item.queue_status === 'up_next') || data.queue.find(item => item.queue_status === 'pending');
+  const next = data.queue.find(item => !item.is_incoming && item.queue_status === 'up_next')
+    || data.queue.find(item => !item.is_incoming && item.queue_status === 'pending');
   if (!next) {
-    alert('Queue is empty — nothing to cue.');
+    alert('Rotation queue is empty — accept a request first.');
     return;
   }
-  // Step 1a: transition request state machine.
   await api(`/api/requests/${next.request_id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status: 'now_singing' }),
   });
-  // Step 1b: mirror to every configured non-main screen.
-  let screens = [];
-  try {
-    const list = await api('/api/display/screens');
-    screens = Array.isArray(list.screens) ? list.screens : [];
-  } catch (_) { /* main-only fallback */ }
+  const screens = await loadDisplayScreens();
   const others = screens.filter(s => s.screen && s.screen !== 'main');
   for (const s of others) {
     try {
       await api('/api/display/state', {
         method: 'POST',
-        body: JSON.stringify({
-          mode: 'now_singing',
-          now_request_id: next.request_id,
-          screen: s.screen,
-        }),
+        body: JSON.stringify({ mode: 'now_singing', now_request_id: next.request_id, screen: s.screen }),
       });
-    } catch (_) { /* keep mirroring */ }
+    } catch (_) { /* keep mirroring the rest */ }
   }
-  // Step 2: trigger a WebSocket-synchronized play. The REST endpoint
-  // publishes display:cue + display:play_at on the EventBus; the WS daemon
-  // pushes them to displays. When the daemon isn't running, displays still
-  // pick the events up over short-poll. Fall back to a local broadcast cue
-  // if the endpoint itself errors.
   try {
     await api('/api/display/play', {
       method: 'POST',
@@ -111,30 +151,126 @@ async function cueAndPlayAll() {
   } catch (_) {
     broadcastDisplayCommand({ screen: 'all', action: 'cue', payload: { requestId: next.request_id } });
   }
+  displayPaused = false;
+  syncPauseButtons();
+  await loadQueue();
 }
 
-function updatePresencePanel() {
-  const panel = document.querySelector('[data-ws-presence]');
-  if (!panel) return;
-  const now = Date.now();
-  const rows = [...displayPresence.entries()]
-    .filter(([, info]) => now - info.lastSeen < 15000)
-    .map(([screen, info]) => `<span class="ws-screen">${escapeHtml(screen)}: ${escapeHtml(info.playerState || 'ready')}</span>`);
-  panel.innerHTML = rows.length ? rows.join(' ') : '<span class="muted">No displays connected.</span>';
+async function skipCurrentSong() {
+  const data = await loadQueue();
+  const current = data.queue.find(item => item.queue_status === 'now_singing');
+  if (!current) {
+    alert('Nobody is currently singing.');
+    return;
+  }
+  await api(`/api/requests/${current.request_id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'skipped' }) });
+  await loadQueue();
+}
+
+function syncPauseButtons() {
+  $$('[data-toggle-pause], [data-np-pause]').forEach(btn => {
+    btn.textContent = displayPaused ? '▶ Resume' : '⏸ Pause';
+    btn.dataset.paused = displayPaused ? '1' : '0';
+  });
+}
+
+async function togglePause() {
+  displayPaused = !displayPaused;
+  syncPauseButtons();
+  try {
+    await api('/api/display/pause', { method: 'POST', body: JSON.stringify({ screen: 'all', paused: displayPaused }) });
+  } catch (error) {
+    displayPaused = !displayPaused; // revert on failure
+    syncPauseButtons();
+    alert(error.message);
+  }
+}
+
+async function blackoutAllDisplays() {
+  if (!confirm('Blackout every connected display?')) return;
+  const screens = await loadDisplayScreens();
+  for (const s of screens) {
+    try {
+      await api('/api/display/state', { method: 'POST', body: JSON.stringify({ mode: 'blackout', screen: s.screen }) });
+    } catch (_) { /* keep going */ }
+  }
 }
 
 function trackDisplayPresence(msg) {
   if (!msg || !msg.type) return;
-  if (msg.type === 'display:ready' || msg.type === 'display:status') {
+  if (msg.type === 'display:offline') {
+    displayPresence.delete(msg.screen || 'main');
+    loadDisplayScreens().catch(() => {});
+    return;
+  }
+  if (msg.type === 'display:online' || msg.type === 'display:ready' || msg.type === 'display:status') {
     const screen = msg.screen || 'main';
     displayPresence.set(screen, {
       lastSeen: Date.now(),
-      playerState: msg.playerState || (msg.type === 'display:ready' ? 'ready' : ''),
+      playerState: msg.playerState || (msg.type === 'display:ready' ? 'ready' : 'online'),
       requestId: msg.requestId ?? null,
     });
-    updatePresencePanel();
+    loadDisplayScreens().catch(() => {});
   }
 }
+
+/* -------------------------------------------------------------- */
+/* Now Playing panel                                               */
+/* -------------------------------------------------------------- */
+
+function renderNowPlaying(queue, display) {
+  const root = $('[data-now-playing]');
+  if (!root) return;
+  const current = queue.find(item => item.request_id === display?.now_request_id)
+    || queue.find(item => item.queue_status === 'now_singing');
+
+  nowSinging = current && current.queue_status === 'now_singing' ? current : null;
+
+  const titleEl = $('[data-now-playing-title]');
+  const artistEl = $('[data-now-playing-artist]');
+  const singerEl = $('[data-now-playing-singer]');
+  const elapsedEl = $('[data-now-playing-elapsed]');
+
+  if (current) {
+    if (titleEl) titleEl.textContent = current.title || '(untitled)';
+    if (artistEl) artistEl.textContent = current.artist || '';
+    if (singerEl) singerEl.textContent = current.singer_name ? `🎤 ${current.singer_name}` : '';
+  } else {
+    if (titleEl) titleEl.textContent = 'Nothing playing';
+    if (artistEl) artistEl.textContent = '';
+    if (singerEl) singerEl.textContent = '';
+  }
+  if (elapsedEl) elapsedEl.textContent = nowSinging ? elapsedLabel(nowSinging.status_updated_at) : '';
+}
+
+function tickNowPlayingElapsed() {
+  const elapsedEl = $('[data-now-playing-elapsed]');
+  if (elapsedEl && nowSinging) elapsedEl.textContent = elapsedLabel(nowSinging.status_updated_at);
+  const chip = $(`.queue-item[data-request-id="${nowSinging ? nowSinging.request_id : ''}"] .chip-live`);
+  if (chip && nowSinging) chip.textContent = `NOW SINGING · ${elapsedLabel(nowSinging.status_updated_at)}`;
+}
+
+/* -------------------------------------------------------------- */
+/* Activity log                                                    */
+/* -------------------------------------------------------------- */
+
+async function loadActivity() {
+  const container = $('[data-activity-log]');
+  if (!container) return;
+  try {
+    const { activity = [] } = await api('/api/admin/activity?limit=30');
+    container.innerHTML = activity.map(item => `
+      <div class="activity-row">
+        <time>${escapeHtml(new Date(String(item.created_at).replace(' ', 'T')).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}</time>
+        <span>${escapeHtml(item.message)}</span>
+      </div>
+    `).join('') || '<p class="muted">No activity yet.</p>';
+  } catch (_) { /* not authorized / no session yet */ }
+}
+
+/* -------------------------------------------------------------- */
+/* Settings / branding / content / billing (admin-settings, admin-content) */
+/* -------------------------------------------------------------- */
 
 async function loadSettings() {
   const form = $('[data-settings-form]');
@@ -157,6 +293,15 @@ async function loadSettings() {
   } catch (error) {
     setStatus($('[data-status]', form), error.message);
   }
+}
+
+async function loadAutoAccept() {
+  const checkbox = $('[data-auto-accept]');
+  if (!checkbox) return;
+  try {
+    const { settings = {} } = await api('/api/admin/settings');
+    checkbox.checked = !!settings.auto_accept_requests;
+  } catch (_) { /* leave default */ }
 }
 
 async function loadBranding() {
@@ -240,10 +385,40 @@ async function loadBilling() {
         <li><span>Additional KJ</span><strong>${escapeHtml(String(billing.additional_kj))} × ${dollars(billing.additional_kj_cents)}</strong></li>
         <li class="billing-total"><span>Projected monthly</span><strong>${dollars(billing.projected_monthly_cents)}</strong></li>
       </ul>
-      <p class="muted">Subscription status: ${escapeHtml(String(billing.subscription_status))}.</p>`;
+      <p class="muted">Subscription status: ${escapeHtml(String(billing.subscription_status))}.</p>
+      <p class="${billing.checkout_configured && billing.webhook_configured ? 'status-ok' : 'status-warn'}">
+        ${billing.checkout_configured && billing.webhook_configured
+          ? 'Online billing is configured.'
+          : 'Online billing is unavailable on this deployment; contact the service administrator.'}
+      </p>`;
   } catch (error) {
     panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }
+}
+
+/* -------------------------------------------------------------- */
+/* Add Request modal                                               */
+/* -------------------------------------------------------------- */
+
+function openAddRequestModal(prefillQuery) {
+  const dialog = $('[data-add-request-modal]');
+  if (!dialog) return;
+  if (typeof dialog.showModal === 'function' && !dialog.open) dialog.showModal();
+  const query = $('[data-song-query]', dialog);
+  if (query && prefillQuery !== undefined) {
+    query.value = prefillQuery;
+    searchSongs(true).catch(() => {});
+  }
+  if (query && !prefillQuery) query.focus();
+}
+
+function closeAddRequestModal() {
+  const dialog = $('[data-add-request-modal]');
+  const form = $('[data-add-request-form]');
+  if (dialog?.open) dialog.close();
+  form?.reset();
+  const results = $('[data-song-results]');
+  if (results) results.innerHTML = '';
 }
 
 export function init() {
@@ -266,32 +441,75 @@ export function init() {
       });
       return;
     }
-    const mode = event.target.closest('[data-display-mode]');
-    if (mode) {
-      await api('/api/display/state', { method: 'POST', body: JSON.stringify({ mode: mode.dataset.displayMode }) });
+
+    const approve = event.target.closest('[data-approve]');
+    if (approve) {
+      await api(`/api/requests/${approve.dataset.approve}/approve`, { method: 'POST', body: JSON.stringify({}) });
+      await loadQueue();
       return;
     }
-    if (event.target.closest('[data-next-singer]')) {
-      const data = await loadQueue();
-      const next = data.queue.find(item => item.queue_status === 'pending' || item.queue_status === 'up_next');
-      if (next) await api(`/api/requests/${next.request_id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'now_singing' }) });
+    const deny = event.target.closest('[data-deny]');
+    if (deny) {
+      await api(`/api/requests/${deny.dataset.deny}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'canceled' }) });
+      await loadQueue();
       return;
     }
+    const fastTrack = event.target.closest('[data-fast-track]');
+    if (fastTrack) {
+      await api(`/api/requests/${fastTrack.dataset.fastTrack}/approve`, { method: 'POST', body: JSON.stringify({ fast_track: true }) });
+      await loadQueue();
+      return;
+    }
+    const priority = event.target.closest('[data-priority]');
+    if (priority) {
+      const next = priority.dataset.priorityCurrent !== '1';
+      await api(`/api/requests/${priority.dataset.priority}/priority`, { method: 'POST', body: JSON.stringify({ priority: next }) });
+      await loadQueue();
+      return;
+    }
+
+    if (event.target.closest('[data-start-song]')) { await startNextSong(); return; }
+    if (event.target.closest('[data-skip-song], [data-np-skip]')) { await skipCurrentSong(); return; }
+    if (event.target.closest('[data-toggle-pause], [data-np-pause]')) { await togglePause(); return; }
+    if (event.target.closest('[data-blackout-all]')) { await blackoutAllDisplays(); return; }
+    if (event.target.closest('[data-quick-announce]')) {
+      $('[data-announcement-form] textarea')?.focus();
+      $('[data-announcement-form]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    const reorderMode = event.target.closest('[data-reorder-mode]');
+    if (reorderMode) {
+      const on = $('[data-admin-queue]')?.classList.toggle('reorder-mode');
+      reorderMode.classList.toggle('primary', !!on);
+      return;
+    }
+    if (event.target.closest('[data-add-request]')) { openAddRequestModal(); return; }
+    if (event.target.closest('[data-modal-cancel]')) { closeAddRequestModal(); return; }
+
     if (event.target.closest('[data-session-end]')) {
       if (!confirm('End the current session? The queue will be archived.')) return;
       await api('/api/admin/sessions/end', { method: 'POST', body: JSON.stringify({}) });
       location.reload();
       return;
     }
-    const openDisplay = event.target.closest('[data-open-display]');
-    if (openDisplay) {
-      await openDisplayWindow(openDisplay.dataset.openDisplay);
+
+    const mirror = event.target.closest('[data-mirror]');
+    if (mirror) { await openDisplayWindow(mirror.dataset.mirror); return; }
+
+    const messageScreen = event.target.closest('[data-message-screen]');
+    if (messageScreen) {
+      const message = prompt('Message to show on this display:');
+      if (!message || !message.trim()) return;
+      await api('/api/announcements', { method: 'POST', body: JSON.stringify({ message: message.trim(), screen: messageScreen.dataset.messageScreen }) });
       return;
     }
-    if (event.target.closest('[data-cue-all]')) {
-      await cueAndPlayAll();
+
+    const blackoutScreen = event.target.closest('[data-blackout-screen]');
+    if (blackoutScreen) {
+      await api('/api/display/state', { method: 'POST', body: JSON.stringify({ mode: 'blackout', screen: blackoutScreen.dataset.blackoutScreen }) });
       return;
     }
+
     const deleteScreen = event.target.closest('[data-delete-screen]');
     if (deleteScreen) {
       if (!confirm(`Remove display "${deleteScreen.dataset.deleteScreen}"?`)) return;
@@ -319,11 +537,79 @@ export function init() {
     }
   });
 
+  // Content dropdown per connected display.
+  document.addEventListener('change', async event => {
+    const select = event.target.closest('[data-content-screen]');
+    if (select) {
+      await api('/api/display/state', { method: 'POST', body: JSON.stringify({ mode: select.value, screen: select.dataset.contentScreen }) });
+      return;
+    }
+    if (event.target.closest('[data-auto-accept]')) {
+      try {
+        await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ auto_accept_requests: event.target.checked }) });
+      } catch (error) { alert(error.message); event.target.checked = !event.target.checked; }
+    }
+  });
+
   // Announcements.
   $('[data-announcement-form]')?.addEventListener('submit', async event => {
     event.preventDefault();
-    await api('/api/announcements', { method: 'POST', body: JSON.stringify(formData(event.target)) });
+    const data = formData(event.target);
+    if (!data.message || !data.message.trim()) return;
+    await api('/api/announcements', { method: 'POST', body: JSON.stringify({ message: data.message.trim(), screen: 'all' }) });
     event.target.reset();
+    loadActivity();
+  });
+
+  // Quick header search bridges into the Add Request modal.
+  let quickSearchDebounce = null;
+  $('[data-quick-search]')?.addEventListener('input', event => {
+    clearTimeout(quickSearchDebounce);
+    const value = event.target.value;
+    quickSearchDebounce = setTimeout(() => openAddRequestModal(value), 200);
+  });
+
+  // Add Request modal: song search + pick + submit.
+  const addRequestDialog = $('[data-add-request-modal]');
+  if (addRequestDialog) {
+    let addSearchDebounce = null;
+    $('[data-song-query]', addRequestDialog)?.addEventListener('input', () => {
+      const form = $('[data-add-request-form]');
+      if (form) { form.elements.song_id.value = ''; form.elements.shared_song_id.value = ''; }
+      clearTimeout(addSearchDebounce);
+      addSearchDebounce = setTimeout(() => searchSongs(true).catch(() => {}), 200);
+    });
+    addRequestDialog.addEventListener('click', event => {
+      const pick = event.target.closest('[data-song-pick]');
+      if (!pick) return;
+      const form = $('[data-add-request-form]');
+      if (!form) return;
+      const source = pick.dataset.songSource || 'local';
+      form.elements.song_id.value = source === 'local' ? pick.dataset.songId : '';
+      form.elements.shared_song_id.value = source === 'shared' ? pick.dataset.songId : '';
+      const q = $('[data-song-query]', addRequestDialog);
+      if (q) q.value = pick.dataset.songLabel || '';
+      const results = $('[data-song-results]', addRequestDialog);
+      if (results) results.innerHTML = '';
+    });
+    addRequestDialog.addEventListener('cancel', () => closeAddRequestModal());
+    addRequestDialog.addEventListener('click', event => {
+      if (event.target === addRequestDialog) closeAddRequestModal(); // backdrop click
+    });
+  }
+  $('[data-add-request-form]')?.addEventListener('submit', async event => {
+    event.preventDefault();
+    const form = event.target;
+    const statusEl = $('[data-status]', form);
+    if (!form.elements.song_id.value && !form.elements.shared_song_id.value) {
+      setStatus(statusEl, 'Pick a song from the search results first.');
+      return;
+    }
+    try {
+      await api('/api/requests', { method: 'POST', body: JSON.stringify(formData(form)) });
+      closeAddRequestModal();
+      await loadQueue();
+    } catch (error) { setStatus(statusEl, error.message); }
   });
 
   // Picking a venue prefills the night name from its default.
@@ -418,25 +704,39 @@ export function init() {
   });
 
   // Initial paint.
-  loadQueue().catch(() => {});
+  loadQueue().then(data => renderNowPlaying(data.queue, data.display)).catch(() => {});
   loadSettings();
   loadBranding();
   loadContentFiles();
   loadBilling();
+  loadAutoAccept();
   if (appConfig.page === 'admin-dashboard') {
     loadStartVenues();
     loadTonightEvents();
+    loadActivity();
+    setInterval(loadActivity, 8000);
+    setInterval(tickNowPlayingElapsed, 1000);
+    setInterval(() => {
+      const el = $('[data-ws-status]');
+      if (!el) return;
+      const connected = isConnected();
+      el.textContent = connected ? '● WebSocket Connected' : '● Short-poll (no WebSocket)';
+      el.classList.toggle('status-ok', connected);
+      el.classList.toggle('status-warn', !connected);
+    }, 3000);
   }
   if (appConfig.page === 'admin-dashboard' || appConfig.page === 'admin-settings') {
     loadDisplayScreens().catch(() => {});
   }
 
   // Realtime: prefers the WS daemon (role=kj), falls back to short-poll.
-  startRealtime(() => loadQueue().catch(() => {}));
+  startRealtime(() => {
+    loadQueue().then(data => renderNowPlaying(data.queue, data.display)).catch(() => {});
+  });
   // Track display presence from WS status messages.
   onMessage(trackDisplayPresence);
-  // Age out stale presence entries even when no new messages arrive.
-  setInterval(updatePresencePanel, 5000);
+  // Age out stale presence entries + refresh the display cards.
+  setInterval(() => { loadDisplayScreens().catch(() => {}); }, 5000);
 }
 
 // startEvents stays imported as the short-poll primitive that ws.js
