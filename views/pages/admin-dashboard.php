@@ -10,6 +10,12 @@ $current = 'dashboard';
 // the KJ will actually see it. Unapplied migrations previously took down
 // every realtime write with no signal outside a log file.
 $pendingMigrations = ($healthDb = Auth::db()) ? HealthController::pendingMigrations($healthDb) : [];
+
+// Loading the dashboard no longer auto-creates a session (a GET must not
+// have that side effect), so "no live session" is now a real state the KJ
+// has to see. It was previously hidden inside a collapsed panel.
+$sessionIsLive = in_array((string)($session['status'] ?? ''), ['live', 'active', 'paused'], true)
+    && (int)($session['id'] ?? 0) > 0;
 $host = $_SERVER['HTTP_HOST'] ?? '';
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
 $singerUrl = $tenant['public_request_url'] ?: ($scheme . '://' . $host . Url::path('/'));
@@ -27,6 +33,21 @@ $dashboardQr = QrCode::svg($singerUrl, 96);
         <?= count($pendingMigrations) === 1 ? 'has' : 'have' ?> not been applied to this account's database.
         Realtime updates, the queue, and display sync may fail until an
         administrator runs <code>make migrate</code> on the server.
+      </div>
+    <?php endif; ?>
+
+    <?php if (!$sessionIsLive): ?>
+      <div class="kj-alert kj-alert--warning" role="status">
+        <strong>No live session.</strong>
+        Requests, the queue, and the displays stay dark until you start the
+        night. Name it and hit start — you can change the name later.
+        <form data-session-start class="kj-alert-form inline">
+          <select name="venue_id" data-session-venue>
+            <option value="">No venue</option>
+          </select>
+          <input name="name" placeholder="<?= e($tenant['night_name'] ?: 'Karaoke Night') ?>" maxlength="180">
+          <button class="primary">Start the night</button>
+        </form>
       </div>
     <?php endif; ?>
 

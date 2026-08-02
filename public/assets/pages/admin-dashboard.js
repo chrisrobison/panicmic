@@ -335,19 +335,47 @@ async function loadContentFiles() {
   }
 }
 
+/**
+ * Report the real state of the realtime link in the footer.
+ *
+ * Distinguishes "no session to sync with" from "WebSocket down, polling
+ * instead" — they look identical to a KJ otherwise, but only one of them
+ * is something they can act on.
+ */
+function updateWsStatus() {
+  const el = $('[data-ws-status]');
+  if (!el) return;
+
+  if (document.body.dataset.sessionLive !== '1') {
+    el.textContent = '● No live session';
+    el.classList.remove('status-ok');
+    el.classList.add('status-warn');
+    return;
+  }
+
+  const connected = isConnected();
+  el.textContent = connected ? '● Live sync connected' : '● Short-poll (no WebSocket)';
+  el.classList.toggle('status-ok', connected);
+  el.classList.toggle('status-warn', !connected);
+}
+
 // Map of venue id -> default night name, so picking a venue can prefill
 // the night name input.
 const venueDefaults = new Map();
 
 async function loadStartVenues() {
-  const select = $('[data-session-venue]');
-  if (!select) return;
+  // There can be more than one start-the-night form on the page: the
+  // collapsed session panel, plus the banner shown when nothing is live.
+  // Populate every one of them, not just whichever appears first.
+  const selects = $$('[data-session-venue]');
+  if (!selects.length) return;
   try {
     const { venues = [] } = await api('/api/admin/venues');
     const active = venues.filter(v => Number(v.is_active) === 1);
-    select.innerHTML = '<option value="">No venue</option>' + active.map(v =>
+    const options = '<option value="">No venue</option>' + active.map(v =>
       `<option value="${escapeHtml(String(v.id))}">${escapeHtml(v.name)}</option>`
     ).join('');
+    selects.forEach(select => { select.innerHTML = options; });
     venueDefaults.clear();
     active.forEach(v => venueDefaults.set(String(v.id), v.default_night_name || ''));
   } catch (_) { /* not authorized / no venues */ }
@@ -612,27 +640,40 @@ export function init() {
     } catch (error) { setStatus(statusEl, error.message); }
   });
 
-  // Picking a venue prefills the night name from its default.
-  $('[data-session-venue]')?.addEventListener('change', event => {
-    const nameInput = $('[data-session-start] input[name="name"]');
-    const def = venueDefaults.get(event.target.value);
-    if (nameInput && def && !nameInput.value.trim()) nameInput.value = def;
+  // Picking a venue prefills the night name from its default. Scope the
+  // lookup to the form the select belongs to, so the two start forms don't
+  // write into each other's inputs.
+  $$('[data-session-venue]').forEach(select => {
+    select.addEventListener('change', event => {
+      const form = event.target.closest('[data-session-start]');
+      const nameInput = form ? $('input[name="name"]', form) : $('[data-session-start] input[name="name"]');
+      const def = venueDefaults.get(event.target.value);
+      if (nameInput && def && !nameInput.value.trim()) nameInput.value = def;
+    });
   });
 
   // Session lifecycle. Name is optional — the server falls back to the
   // venue's default night name, then the account default.
-  $('[data-session-start]')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const data = formData(event.target);
-    const name = (data.name || '').trim();
-    const venueId = data.venue_id || '';
-    const label = name || 'a new night';
-    if (!confirm(`Start ${label}? The current session will be archived.`)) return;
-    await api('/api/admin/sessions/start', {
-      method: 'POST',
-      body: JSON.stringify({ name, venue_id: venueId || null }),
+  $$('[data-session-start]').forEach(form => {
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const data = formData(event.target);
+      const name = (data.name || '').trim();
+      const venueId = data.venue_id || '';
+      const label = name || 'a new night';
+      // Only warn about archiving when there is actually a live session to
+      // archive; starting the first night of the evening needs no warning.
+      const hasLiveSession = document.body.dataset.sessionLive === '1';
+      const prompt = hasLiveSession
+        ? `Start ${label}? The current session will be archived.`
+        : `Start ${label}?`;
+      if (!confirm(prompt)) return;
+      await api('/api/admin/sessions/start', {
+        method: 'POST',
+        body: JSON.stringify({ name, venue_id: venueId || null }),
+      });
+      location.reload();
     });
-    location.reload();
   });
 
   // Quick-start a scheduled event for tonight.
@@ -716,14 +757,10 @@ export function init() {
     loadActivity();
     setInterval(loadActivity, 8000);
     setInterval(tickNowPlayingElapsed, 1000);
-    setInterval(() => {
-      const el = $('[data-ws-status]');
-      if (!el) return;
-      const connected = isConnected();
-      el.textContent = connected ? '● WebSocket Connected' : '● Short-poll (no WebSocket)';
-      el.classList.toggle('status-ok', connected);
-      el.classList.toggle('status-warn', !connected);
-    }, 3000);
+    // Run immediately so the footer doesn't sit on the placeholder
+    // "Connecting…" for the first few seconds, then keep it current.
+    updateWsStatus();
+    setInterval(updateWsStatus, 3000);
   }
   if (appConfig.page === 'admin-dashboard' || appConfig.page === 'admin-settings') {
     loadDisplayScreens().catch(() => {});

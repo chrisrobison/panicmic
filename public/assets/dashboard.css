@@ -42,6 +42,24 @@
 }
 .kj-alert--danger strong { color: #fecaca; }
 
+.kj-alert--warning {
+  border-color: var(--warning);
+  background: rgba(245, 185, 63, .10);
+  color: #f3d9a4;
+}
+.kj-alert--warning strong { color: #fde9bd; }
+
+/* Inline "start the night" form inside the no-session banner. */
+.kj-alert-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.kj-alert-form select,
+.kj-alert-form input { min-width: 0; flex: 1 1 160px; }
+.kj-alert-form button { flex: 0 0 auto; }
+
 /* ---------- Header toolbar ---------- */
 .kj-toolbar {
   display: flex;

@@ -16,7 +16,7 @@
  * use short-polling and the rest of the app behaves exactly as before.
  */
 
-import { appConfig } from './api.js';
+import { api, appConfig } from './api.js';
 import { startPollingEvents } from './events.js';
 
 const MAX_CLOCK_SAMPLES = 5;
@@ -24,6 +24,8 @@ const CLOCK_PING_INTERVAL_MS = 10000;
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 30000;
 const FALLBACK_AFTER_FAILURES = 3;
+/** How often a session-less page asks whether the show has started. */
+const SESSION_WATCH_INTERVAL_MS = 15000;
 
 const state = {
   ws: null,
@@ -38,6 +40,7 @@ const state = {
   clockSamples: [],
   avgOffset: 0,
   stopPoll: null,
+  sessionWatch: null,
   handlers: new Set(),
 };
 
@@ -100,13 +103,69 @@ function stopClockSync() {
   if (state.clockTimer) { clearInterval(state.clockTimer); state.clockTimer = null; }
 }
 
+/* -------------------------------------------------------------- */
+/* Session rebinding                                              */
+/*                                                                */
+/* appConfig.sessionId is frozen into a meta tag when the page is  */
+/* rendered. A display opened before the KJ starts the night holds */
+/* a stale (closed) session id forever: its events are filtered by */
+/* session, so it receives nothing and silently shows last night's */
+/* state. The daemon rejects such handshakes, but a browser cannot */
+/* read the rejection body — so the client re-checks the server's  */
+/* authoritative session id and reloads when it has moved on.      */
+/* -------------------------------------------------------------- */
+
+/** Guards against concurrent checks and reload loops. */
+let resyncInFlight = false;
+let reloading = false;
+
+async function resyncSession(reason) {
+  if (resyncInFlight || reloading) return;
+  resyncInFlight = true;
+  try {
+    const config = await api('/api/config');
+    const liveId = String(config?.session?.id ?? '');
+    const mineId = String(appConfig.sessionId || '');
+    if (liveId && liveId !== '0' && liveId !== mineId) {
+      log(`session changed (${mineId} → ${liveId}, ${reason}); reloading`);
+      reloading = true;
+      location.reload();
+    }
+  } catch (_) {
+    // Offline or server error: keep the current binding and let the
+    // reconnect/poll loop try again rather than reloading blindly.
+  } finally {
+    resyncInFlight = false;
+  }
+}
+
+/**
+ * Watch a batch of EventBus events for session lifecycle changes.
+ * These are published tenant-wide (NULL session_id) precisely so they
+ * reach clients bound to a different — possibly dead — session.
+ */
+function checkForSessionChange(events) {
+  for (const e of events || []) {
+    if (e?.event_name !== 'session:started' && e?.event_name !== 'session:ended') continue;
+    const announced = String(e.payload?.sessionId ?? e.payload?.session?.id ?? '');
+    if (!announced || announced !== String(appConfig.sessionId || '')) {
+      resyncSession(e.event_name);
+      return;
+    }
+  }
+}
+
+/** Deliver events to the page, after lifecycle inspection. */
+function emit(events) {
+  checkForSessionChange(events);
+  try { state.onRefresh?.(events); } catch (_) {}
+}
+
 function fallBackToPolling() {
   if (state.fellBack) return;
   state.fellBack = true;
   log('falling back to short-poll');
-  state.stopPoll = startPollingEvents(events => {
-    try { state.onRefresh?.(events); } catch (_) {}
-  });
+  state.stopPoll = startPollingEvents(events => emit(events));
 }
 
 function scheduleReconnect() {
@@ -166,9 +225,7 @@ function connect() {
       case 'event':
         // Generic EventBus push: same array shape the short-poll path
         // delivers, so callers can reuse their onRefresh handler.
-        try {
-          state.onRefresh?.([{ event_name: msg.eventName, payload: msg.payload || {} }]);
-        } catch (_) {}
+        emit([{ event_name: msg.eventName, payload: msg.payload || {} }]);
         dispatch(msg);
         return;
       default:
@@ -185,7 +242,14 @@ function connect() {
     state.ws = null;
     state.failures++;
     log('closed', state.failures);
-    if (state.failures >= FALLBACK_AFTER_FAILURES) fallBackToPolling();
+    if (state.failures >= FALLBACK_AFTER_FAILURES) {
+      // Repeated failures with no successful handshake are the signature
+      // of a stale session id: the daemon rejects us and the browser never
+      // sees why. Check whether the session moved on before settling into
+      // polling, otherwise we'd poll a dead session indefinitely.
+      resyncSession('repeated handshake failure');
+      fallBackToPolling();
+    }
     scheduleReconnect();
   });
 
@@ -219,6 +283,11 @@ export function startRealtime(onRefresh) {
   state.onRefresh = onRefresh;
   state.role = appConfig.page === 'admin-dashboard' || appConfig.page === 'admin-settings' ? 'kj' : 'display';
   if (!canConnect()) {
+    // No usable session id — typically a display opened before the KJ
+    // starts the night. Nothing will ever be pushed to us, and there are
+    // no events to notice a change in, so poll the config endpoint until
+    // a session appears and then reload into it.
+    startSessionWatch();
     fallBackToPolling();
     return () => stop();
   }
@@ -226,9 +295,19 @@ export function startRealtime(onRefresh) {
   return () => stop();
 }
 
+function startSessionWatch() {
+  if (state.sessionWatch) return;
+  state.sessionWatch = setInterval(() => resyncSession('waiting for a live session'), SESSION_WATCH_INTERVAL_MS);
+}
+
+function stopSessionWatch() {
+  if (state.sessionWatch) { clearInterval(state.sessionWatch); state.sessionWatch = null; }
+}
+
 function stop() {
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   stopClockSync();
+  stopSessionWatch();
   if (state.stopPoll) { try { state.stopPoll(); } catch (_) {} state.stopPoll = null; }
   if (state.ws) { try { state.ws.close(); } catch (_) {} state.ws = null; }
   state.connected = false;
