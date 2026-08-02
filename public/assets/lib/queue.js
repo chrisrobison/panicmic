@@ -79,6 +79,107 @@ function applyPlayerVolume() {
   if (video) video.volume = displayPlayer.defaultVolume / 100;
 }
 
+/* -------------------------------------------------------------- */
+/* YouTube mount points                                            */
+/*                                                                */
+/* The IFrame API REPLACES the element handed to new YT.Player()   */
+/* with its own <iframe>. The replacement keeps the class and id   */
+/* but drops data-* attributes, so [data-display-yt] stops         */
+/* matching the moment the first player is built.                  */
+/*                                                                */
+/* That broke every song after the first: cueDisplayPlayer looked  */
+/* up [data-display-yt], got null, took its "no element" branch    */
+/* and reported the video ready without ever calling               */
+/* cueVideoById. The scheduled play then ran against the player    */
+/* still holding the previous song, while the queue metadata       */
+/* updated normally through its own path — so the display showed   */
+/* the new singer and the old video.                               */
+/*                                                                */
+/* Fix: [data-display-yt] is a permanent host that the API never   */
+/* sees. Players are built on a disposable child mount inside it.  */
+/* -------------------------------------------------------------- */
+
+/** The stable wrapper. Survives every player create/destroy cycle. */
+function ytHost() {
+  return $('[data-display-yt]');
+}
+
+/**
+ * A fresh child element for the API to consume. Only needed when
+ * constructing a player; an existing player is re-cued in place.
+ */
+function ytMount() {
+  const host = ytHost();
+  if (!host) return null;
+  // Anything left inside the host is a spent iframe from a previous
+  // player, so clear it before handing over a new mount.
+  host.innerHTML = '';
+  const mount = document.createElement('div');
+  mount.className = 'display-player-mount';
+  host.appendChild(mount);
+  return mount;
+}
+
+/**
+ * Resolve readiness by polling the player's loaded video id.
+ *
+ * The CUED state event fires reliably only for a freshly-constructed
+ * player; a re-cue on an existing one lands in UNSTARTED and emits
+ * nothing further. Rather than trust the event alone, watch for the id
+ * the player actually reports. Gives up after `timeoutMs` and reports
+ * ready anyway — a late-loading video should not wedge the display,
+ * since playback is driven separately by the scheduled play command.
+ */
+function awaitVideoLoaded(videoId, done, timeoutMs = 4000) {
+  const startedAt = Date.now();
+  const timer = setInterval(() => {
+    let loaded = null;
+    try { loaded = displayPlayer.ytPlayer?.getVideoData?.().video_id ?? null; } catch (_) {}
+    if (loaded === videoId || Date.now() - startedAt > timeoutMs) {
+      clearInterval(timer);
+      done();
+    }
+  }, 150);
+}
+
+/**
+ * Construct the YouTube player on a fresh mount, cueing `videoId`.
+ * Returns false when there is nowhere to mount it.
+ *
+ * `displayPlayer.onCued` (not a closed-over callback) is invoked on the
+ * CUED state change, so the single persistent listener always runs the
+ * newest cue's completion handler instead of accumulating one per song.
+ */
+function buildYouTubePlayer(videoId) {
+  const mount = ytMount();
+  if (!mount) return false;
+
+  displayPlayer.ytPlayer = new YT.Player(mount, {
+    height: '100%',
+    width: '100%',
+    videoId,
+    playerVars: {
+      autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1,
+      mute: displayPlayer.audioUnlocked ? 0 : 1,
+    },
+    events: {
+      onReady: e => {
+        try {
+          if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+          e.target.setVolume(displayPlayer.defaultVolume);
+          e.target.cueVideoById(videoId);
+        } catch (_) {}
+      },
+      onStateChange: e => {
+        if (e.data === YT.PlayerState.CUED) {
+          try { displayPlayer.onCued?.(); } catch (_) {}
+        }
+      },
+    },
+  });
+  return true;
+}
+
 /**
  * Unlock audio for the rest of this page's life. Must be called
  * synchronously from within a real click/tap handler — that's what
@@ -109,9 +210,11 @@ export function unlockDisplayAudio() {
 }
 
 function recreateYouTubePlayerUnmuted() {
-  const yt = $('[data-display-yt]');
   const videoId = displayPlayer.currentVideoId;
-  if (!yt || !videoId) return;
+  // Note: the host, not [data-display-yt] on the iframe — the API strips
+  // that attribute when it swaps the element out, so looking it up here
+  // returned null and the unlock silently did nothing.
+  if (!ytHost() || !videoId) return;
 
   let resumeAt = 0;
   let wasPlaying = true;
@@ -121,7 +224,10 @@ function recreateYouTubePlayerUnmuted() {
   try { displayPlayer.ytPlayer.destroy(); } catch (_) {}
   displayPlayer.ytPlayer = null;
 
-  displayPlayer.ytPlayer = new YT.Player(yt, {
+  const mount = ytMount();
+  if (!mount) return;
+
+  displayPlayer.ytPlayer = new YT.Player(mount, {
     height: '100%',
     width: '100%',
     videoId,
@@ -481,7 +587,7 @@ function stopDisplayPlayer() {
   }
   clearSyncPlaybackState();
   displayPlayer.currentVideoId = null;
-  const yt = $('[data-display-yt]');
+  const yt = ytHost();
   const v = $('[data-display-video]');
   const empty = $('[data-display-player-empty]');
   if (yt) yt.hidden = true;
@@ -521,11 +627,16 @@ export function cueDisplayPlayer(videoInfo, onReady) {
   displayPlayer.cued = false;
   displayPlayer.pendingPlayback = { startAtServerMs: null, offsetSeconds: 0 };
 
-  const yt = $('[data-display-yt]');
+  const yt = ytHost();
   const v = $('[data-display-video]');
   const empty = $('[data-display-player-empty]');
 
+  // Idempotent: readiness can arrive either from the CUED state event or
+  // from the poll fallback below, whichever wins.
+  let readyFired = false;
   const ready = () => {
+    if (readyFired) return;
+    readyFired = true;
     displayPlayer.cued = true;
     try { onReady?.(provider); } catch (_) {}
   };
@@ -543,30 +654,25 @@ export function cueDisplayPlayer(videoInfo, onReady) {
     displayPlayer.onCued = ready;
     loadYouTubeApi(() => {
       if (!displayPlayer.ytPlayer) {
-        displayPlayer.ytPlayer = new YT.Player(yt, {
-          height: '100%',
-          width: '100%',
-          videoId: info.youtubeVideoId,
-          playerVars: { autoplay: 0, controls: 0, modestbranding: 1, rel: 0, playsinline: 1, mute: displayPlayer.audioUnlocked ? 0 : 1 },
-          events: {
-            onReady: e => {
-              try {
-                if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
-                e.target.setVolume(displayPlayer.defaultVolume);
-                e.target.cueVideoById(info.youtubeVideoId);
-              } catch (_) {}
-            },
-            onStateChange: e => {
-              if (e.data === YT.PlayerState.CUED) { try { displayPlayer.onCued?.(); } catch (_) {} }
-            },
-          },
-        });
-      } else {
-        try {
-          if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
-          displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
-          displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
-        } catch (_) { ready(); }
+        if (!buildYouTubePlayer(info.youtubeVideoId)) ready();
+        return;
+      }
+      try {
+        if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+        displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
+        displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
+        // Re-cueing an existing player settles in UNSTARTED and does not
+        // re-emit CUED (verified against the live API), so the state-change
+        // listener alone never reports readiness for the second song
+        // onward. Confirm by watching the loaded video id instead.
+        awaitVideoLoaded(info.youtubeVideoId, ready);
+      } catch (_) {
+        // Stale handle — its iframe was torn out from under it. Rebuild
+        // instead of stranding the display on the previous song, which is
+        // what reporting ready() here used to do.
+        try { displayPlayer.ytPlayer.destroy?.(); } catch (_) {}
+        displayPlayer.ytPlayer = null;
+        if (!buildYouTubePlayer(info.youtubeVideoId)) ready();
       }
     });
     return;
@@ -778,8 +884,13 @@ export function resumeDisplayPlayer() {
 function showEmptyPlayer(current) {
   const empty = $('[data-display-player-empty]');
   if (!empty) return;
-  $('[data-display-yt]').hidden = true;
-  $('[data-display-video]').hidden = true;
+  // Guarded: these were unguarded property writes, so once the YouTube API
+  // replaced the player element the lookup returned null and this threw a
+  // TypeError, aborting the rest of the render.
+  const yt = ytHost();
+  const video = $('[data-display-video]');
+  if (yt) yt.hidden = true;
+  if (video) video.hidden = true;
   empty.hidden = false;
   $('[data-display-player-title]', empty).textContent = current
     ? `${current.singer_name || ''} — ${current.title || ''}`
@@ -788,7 +899,7 @@ function showEmptyPlayer(current) {
 
 function showSelfHostedVideo(src) {
   const v = $('[data-display-video]');
-  const yt = $('[data-display-yt]');
+  const yt = ytHost();
   const empty = $('[data-display-player-empty]');
   if (yt) yt.hidden = true;
   if (empty) empty.hidden = true;
@@ -803,7 +914,7 @@ function showSelfHostedVideo(src) {
 }
 
 function showYouTube(videoId) {
-  const yt = $('[data-display-yt]');
+  const yt = ytHost();
   const v = $('[data-display-video]');
   const empty = $('[data-display-player-empty]');
   if (v) { v.pause(); v.hidden = true; }
@@ -816,7 +927,9 @@ function showYouTube(videoId) {
 
   loadYouTubeApi(() => {
     if (!displayPlayer.ytPlayer) {
-      displayPlayer.ytPlayer = new YT.Player(yt, {
+      const mount = ytMount();
+      if (!mount) return;
+      displayPlayer.ytPlayer = new YT.Player(mount, {
         height: '100%',
         width: '100%',
         videoId,
