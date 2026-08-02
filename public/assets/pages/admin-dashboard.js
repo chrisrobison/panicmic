@@ -447,6 +447,34 @@ function closeAddRequestModal() {
   form?.reset();
   const results = $('[data-song-results]');
   if (results) results.innerHTML = '';
+  clearPickedSong();
+  const walkup = $('[data-walkup-song]');
+  if (walkup) walkup.open = false;
+  const status = $('[data-status]', form);
+  if (status) status.textContent = '';
+}
+
+/**
+ * Show which song is currently selected. Without this the only feedback
+ * for picking a song was the search box changing text, which read as
+ * "nothing happened" and left KJs re-clicking results.
+ */
+function showPickedSong(label) {
+  const wrap = $('[data-picked-song]');
+  const text = $('[data-picked-song-label]');
+  if (!wrap || !text) return;
+  text.textContent = label;
+  wrap.hidden = false;
+}
+
+function clearPickedSong() {
+  const form = $('[data-add-request-form]');
+  if (form) {
+    form.elements.song_id.value = '';
+    form.elements.shared_song_id.value = '';
+  }
+  const wrap = $('[data-picked-song]');
+  if (wrap) wrap.hidden = true;
 }
 
 export function init() {
@@ -602,8 +630,8 @@ export function init() {
   if (addRequestDialog) {
     let addSearchDebounce = null;
     $('[data-song-query]', addRequestDialog)?.addEventListener('input', () => {
-      const form = $('[data-add-request-form]');
-      if (form) { form.elements.song_id.value = ''; form.elements.shared_song_id.value = ''; }
+      // Typing invalidates any previous pick, chip included.
+      clearPickedSong();
       clearTimeout(addSearchDebounce);
       addSearchDebounce = setTimeout(() => searchSongs(true).catch(() => {}), 200);
     });
@@ -615,11 +643,22 @@ export function init() {
       const source = pick.dataset.songSource || 'local';
       form.elements.song_id.value = source === 'local' ? pick.dataset.songId : '';
       form.elements.shared_song_id.value = source === 'shared' ? pick.dataset.songId : '';
+      const label = pick.dataset.songLabel || '';
       const q = $('[data-song-query]', addRequestDialog);
-      if (q) q.value = pick.dataset.songLabel || '';
+      if (q) q.value = label;
       const results = $('[data-song-results]', addRequestDialog);
       if (results) results.innerHTML = '';
+      showPickedSong(label);
     });
+
+    // "change" next to the chosen song clears it and returns to searching.
+    addRequestDialog.addEventListener('click', event => {
+      if (!event.target.closest('[data-clear-song]')) return;
+      clearPickedSong();
+      const q = $('[data-song-query]', addRequestDialog);
+      if (q) { q.value = ''; q.focus(); }
+    });
+
     addRequestDialog.addEventListener('cancel', () => closeAddRequestModal());
     addRequestDialog.addEventListener('click', event => {
       if (event.target === addRequestDialog) closeAddRequestModal(); // backdrop click
@@ -629,12 +668,26 @@ export function init() {
     event.preventDefault();
     const form = event.target;
     const statusEl = $('[data-status]', form);
-    if (!form.elements.song_id.value && !form.elements.shared_song_id.value) {
-      setStatus(statusEl, 'Pick a song from the search results first.');
+    const data = formData(form);
+    const hasCatalogSong = Boolean(data.song_id || data.shared_song_id);
+    const hasTypedSong = Boolean((data.custom_song_title || '').trim());
+
+    if (!hasCatalogSong && !hasTypedSong) {
+      setStatus(statusEl, 'Pick a song from the search results, or type a title under "Not in the catalog?".');
+      $('[data-walkup-song]')?.setAttribute('open', '');
       return;
     }
+    if (!(data.display_name || '').trim()) {
+      setStatus(statusEl, "Enter the singer's name.");
+      return;
+    }
+
+    setStatus(statusEl, 'Adding…');
     try {
-      await api('/api/requests', { method: 'POST', body: JSON.stringify(formData(form)) });
+      // KJ endpoint, not the public one: works while requests are paused,
+      // has no public rate limit, and drops the singer straight into the
+      // rotation instead of the incoming tray.
+      await api('/api/admin/requests', { method: 'POST', body: JSON.stringify(data) });
       closeAddRequestModal();
       await loadQueue();
     } catch (error) { setStatus(statusEl, error.message); }

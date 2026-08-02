@@ -17,7 +17,7 @@ final class QueueService
                     sr.reviewed_at, sr.is_priority,
                     sr.youtube_video_id, sr.youtube_title, sr.youtube_channel_title, sr.youtube_url, sr.youtube_matched_at,
                     sr.manual_video_url, sr.manual_video_attached_at,
-                    sr.song_id, sr.shared_song_id,
+                    sr.song_id, sr.shared_song_id, sr.custom_song_title, sr.custom_song_artist,
                     s.id singer_id, s.display_name singer_name,
                     songs.title local_title, songs.artist local_artist, songs.genre local_genre, songs.decade local_decade,
                     songs.album local_album, songs.album_art_url local_album_art_url,
@@ -45,8 +45,13 @@ final class QueueService
 
         return array_map(static function (array $row) use ($sharedById): array {
             $shared = !empty($row['shared_song_id']) ? ($sharedById[(int)$row['shared_song_id']] ?? null) : null;
-            $row['title'] = $row['local_title'] ?? ($shared['title'] ?? '(unknown song)');
-            $row['artist'] = $row['local_artist'] ?? ($shared['artist'] ?? '');
+            // Catalog song → shared catalog → KJ-typed walk-up title.
+            $row['title'] = $row['local_title']
+                ?? ($shared['title'] ?? null)
+                ?? ($row['custom_song_title'] ?: '(unknown song)');
+            $row['artist'] = $row['local_artist']
+                ?? ($shared['artist'] ?? null)
+                ?? ($row['custom_song_artist'] ?: '');
             $row['genre'] = $row['local_genre'] ?? ($shared['genre'] ?? null);
             $row['decade'] = $row['local_decade'] ?? ($shared['decade'] ?? null);
             $row['album'] = $row['local_album'] ?? ($shared['album'] ?? null);
@@ -54,7 +59,11 @@ final class QueueService
             $row['video_url'] = $row['local_video_url'] ?? null;
             $row['provider_url'] = $row['local_provider_url'] ?? null;
             $row['video_provider'] = $row['local_video_provider'] ?? null;
-            $row['song_source'] = !empty($row['song_id']) ? 'local' : (!empty($row['shared_song_id']) ? 'shared' : null);
+            $row['song_source'] = !empty($row['song_id'])
+                ? 'local'
+                : (!empty($row['shared_song_id'])
+                    ? 'shared'
+                    : (!empty($row['custom_song_title']) ? 'walkup' : null));
             $row['is_new'] = ((int)($row['singer_request_count'] ?? 0)) <= 1;
             $row['is_priority'] = !empty($row['is_priority']);
             $row['is_incoming'] = $row['queue_status'] === 'pending' && empty($row['reviewed_at']);
@@ -177,24 +186,161 @@ final class QueueService
             )->execute([$sessionId, $name]);
             $singerId = (int)$db->lastInsertId();
 
-            $stmt = $db->prepare('INSERT INTO song_requests (session_id, singer_id, song_id, shared_song_id, party_type, notes, requester_token) VALUES (?, ?, ?, ?, ?, ?, ?)');
-            $stmt->execute([
-                $sessionId,
-                $singerId,
-                $songId,
-                $sharedSongId,
-                in_array($data['party_type'] ?? 'solo', ['solo', 'duet', 'group'], true) ? ($data['party_type'] ?? 'solo') : 'solo',
-                trim((string)($data['notes'] ?? '')) ?: null,
-                $requesterToken,
+            return self::insertRequest($db, $sessionId, $singerId, [
+                'song_id' => $songId,
+                'shared_song_id' => $sharedSongId,
+                'party_type' => $data['party_type'] ?? 'solo',
+                'notes' => $data['notes'] ?? null,
+                'requester_token' => $requesterToken,
             ]);
-            $requestId = (int)$db->lastInsertId();
+        });
+    }
 
-            $nextPosition = $db->prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM queue_items WHERE session_id = ?');
-            $nextPosition->execute([$sessionId]);
-            $position = (int)$nextPosition->fetchColumn();
-            $stmt = $db->prepare('INSERT INTO queue_items (session_id, request_id, position) VALUES (?, ?, ?)');
-            $stmt->execute([$sessionId, $requestId, $position]);
-            return $requestId;
+    /**
+     * Upsert the singer row for this session and return its id.
+     *
+     * Shared by the public request flow and the KJ walk-up flow so both
+     * track singers identically (per-session rows, bumped last_seen_at).
+     */
+    private static function upsertSinger(PDO $db, int $sessionId, string $displayName): int
+    {
+        $db->prepare(
+            'INSERT INTO singers (session_id, display_name, last_seen_at) VALUES (?, ?, NOW())
+             ON DUPLICATE KEY UPDATE last_seen_at = NOW(), id = LAST_INSERT_ID(id)'
+        )->execute([$sessionId, $displayName]);
+        return (int)$db->lastInsertId();
+    }
+
+    /**
+     * Insert the request row plus its queue item at the end of the rotation.
+     * Must be called inside a transaction that holds the session lock.
+     *
+     * @param array<string,mixed> $fields
+     */
+    private static function insertRequest(PDO $db, int $sessionId, int $singerId, array $fields): int
+    {
+        $partyType = in_array($fields['party_type'] ?? 'solo', ['solo', 'duet', 'group'], true)
+            ? (string)($fields['party_type'] ?? 'solo')
+            : 'solo';
+
+        $stmt = $db->prepare(
+            'INSERT INTO song_requests
+                (session_id, singer_id, song_id, shared_song_id, custom_song_title, custom_song_artist,
+                 party_type, notes, requester_token, reviewed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        $stmt->execute([
+            $sessionId,
+            $singerId,
+            $fields['song_id'] ?? null,
+            $fields['shared_song_id'] ?? null,
+            $fields['custom_song_title'] ?? null,
+            $fields['custom_song_artist'] ?? null,
+            $partyType,
+            trim((string)($fields['notes'] ?? '')) ?: null,
+            $fields['requester_token'] ?? null,
+            // Pre-reviewed requests skip the incoming tray entirely.
+            !empty($fields['pre_reviewed']) ? date('Y-m-d H:i:s') : null,
+        ]);
+        $requestId = (int)$db->lastInsertId();
+
+        $nextPosition = $db->prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM queue_items WHERE session_id = ?');
+        $nextPosition->execute([$sessionId]);
+        $position = (int)$nextPosition->fetchColumn();
+        $db->prepare('INSERT INTO queue_items (session_id, request_id, position) VALUES (?, ?, ?)')
+           ->execute([$sessionId, $requestId, $position]);
+
+        return $requestId;
+    }
+
+    /**
+     * Add a walk-up singer on the KJ's behalf.
+     *
+     * Deliberately not the public submit() path. That one enforces rules
+     * aimed at the room — an 8-per-minute rate limit, the requests-paused
+     * gate, duplicate-name prevention, and a mandatory catalog match — all
+     * of which are wrong for the person running the show:
+     *
+     *   - A KJ working through a stack of paper slips trips the rate limit.
+     *   - Pausing public requests is exactly when the KJ still needs to add
+     *     someone, so the pause gate blocked the one user it shouldn't.
+     *   - A walk-up frequently names a song that isn't in either catalog.
+     *   - The request landed as 'pending' in the incoming tray rather than
+     *     the rotation, so the KJ added a singer and nothing appeared to
+     *     happen.
+     *
+     * Walk-ups are therefore pre-reviewed (straight into the rotation) and
+     * accept a free-text song. The KJ is the trusted operator here; the
+     * guard rails that matter are still enforced (session must be live, the
+     * singer needs a name, a song must be identified somehow).
+     *
+     * @param array<string,mixed> $data
+     * @return array{requestId:int,singerId:int}
+     */
+    public static function submitWalkUp(PDO $db, int $sessionId, array $data, ?PDO $superDb = null): array
+    {
+        $name = trim((string)($data['display_name'] ?? ''));
+        if ($name === '') {
+            throw new \InvalidArgumentException('A singer name is required');
+        }
+        if (mb_strlen($name) > 160) {
+            throw new \InvalidArgumentException('That singer name is too long (160 characters max)');
+        }
+
+        $songId = !empty($data['song_id']) ? (int)$data['song_id'] : null;
+        $sharedSongId = !empty($data['shared_song_id']) ? (int)$data['shared_song_id'] : null;
+        $customTitle = trim((string)($data['custom_song_title'] ?? ''));
+        $customArtist = trim((string)($data['custom_song_artist'] ?? ''));
+
+        if ($songId && $sharedSongId) {
+            throw new \InvalidArgumentException('Pick exactly one song');
+        }
+        if (!$songId && !$sharedSongId && $customTitle === '') {
+            throw new \InvalidArgumentException('Pick a song from the catalog or type a title');
+        }
+        if (mb_strlen($customTitle) > 200 || mb_strlen($customArtist) > 200) {
+            throw new \InvalidArgumentException('Song title and artist are limited to 200 characters');
+        }
+        if ($songId && !SongService::find($db, $songId)) {
+            throw new \InvalidArgumentException('Selected catalog song does not exist');
+        }
+        if ($sharedSongId && (!$superDb || !SharedCatalogService::exists($superDb, $sharedSongId))) {
+            throw new \InvalidArgumentException('Selected shared song is not available');
+        }
+
+        // A catalog match wins; the typed text is only a fallback identity.
+        if ($songId || $sharedSongId) {
+            $customTitle = '';
+            $customArtist = '';
+        }
+
+        return self::tx($db, function () use (
+            $db, $sessionId, $name, $songId, $sharedSongId, $customTitle, $customArtist, $data
+        ): array {
+            $sessionLock = $db->prepare(
+                "SELECT id FROM karaoke_sessions
+                 WHERE id = ? AND status IN ('live','active','paused') FOR UPDATE"
+            );
+            $sessionLock->execute([$sessionId]);
+            if (!$sessionLock->fetchColumn()) {
+                throw new \InvalidArgumentException('Start the night before adding singers');
+            }
+
+            $singerId = self::upsertSinger($db, $sessionId, $name);
+            $requestId = self::insertRequest($db, $sessionId, $singerId, [
+                'song_id' => $songId,
+                'shared_song_id' => $sharedSongId,
+                'custom_song_title' => $customTitle !== '' ? $customTitle : null,
+                'custom_song_artist' => $customArtist !== '' ? $customArtist : null,
+                'party_type' => $data['party_type'] ?? 'solo',
+                'notes' => $data['notes'] ?? null,
+                // No requester_token: there is no phone to tie this to, so
+                // the singer cannot self-cancel a KJ-entered walk-up.
+                'requester_token' => null,
+                'pre_reviewed' => true,
+            ]);
+
+            return ['requestId' => $requestId, 'singerId' => $singerId];
         });
     }
 
