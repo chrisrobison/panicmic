@@ -50,6 +50,7 @@ try {
         'tenant'  => runScope('tenant', $dryRun, requireTenantArg($argTenant)),
         'tenants' => runAllTenants($dryRun),
         'status'  => statusReport($argTenant, $cliArgs),
+        'check'   => pendingCheck(),
         default   => usage(1),
     };
 } catch (Throwable $e) {
@@ -89,6 +90,10 @@ Usage:
   php scripts/migrate.php status super
   php scripts/migrate.php status tenant <database>
   php scripts/migrate.php status tenants
+  php scripts/migrate.php check
+
+`check` exits 1 if any scope has pending migrations. Use it as a deploy
+gate so schema drift fails the release instead of the show.
 
 TXT);
     exit($code);
@@ -332,6 +337,82 @@ function statusReport(?string $arg, array $cliArgs): void
         return;
     }
     usage(1);
+}
+
+/**
+ * Deploy gate: report every scope with pending migrations and exit 1 if
+ * any exist. Read-only — never creates the ledger or applies anything.
+ *
+ * Exists because nothing in the deploy path ran migrations, so tenant
+ * databases drifted behind the code that depended on them. Wire this into
+ * CI/deploy and drift becomes a failed release instead of a broken show.
+ */
+function pendingCheck(): never
+{
+    $superName = (string)(Env::get('SUPER_DB_NAME', 'panicmic_super') ?? 'panicmic_super');
+    $scopes = [['super', null, 'super']];
+
+    foreach (Connection::provisioner($superName)
+        ->query('SELECT slug, database_name FROM tenants ORDER BY slug')
+        ->fetchAll() as $t) {
+        $scopes[] = ['tenant', (string)$t['database_name'], "tenant ({$t['slug']})"];
+    }
+
+    $drifted = [];
+    foreach ($scopes as [$scope, $database, $label]) {
+        try {
+            $pending = pendingFor($scope, $database);
+        } catch (Throwable $e) {
+            fwrite(STDERR, "  ⚠ {$label}: cannot check — {$e->getMessage()}\n");
+            $drifted[$label] = ['(unreadable)'];
+            continue;
+        }
+        if ($pending !== []) {
+            $drifted[$label] = $pending;
+        }
+    }
+
+    if ($drifted === []) {
+        echo "✓ All scopes up to date (" . count($scopes) . " checked).\n";
+        exit(0);
+    }
+
+    fwrite(STDERR, "✗ Pending migrations detected:\n");
+    foreach ($drifted as $label => $files) {
+        fwrite(STDERR, "  {$label}\n");
+        foreach ($files as $f) {
+            fwrite(STDERR, "    · {$f}\n");
+        }
+    }
+    fwrite(STDERR, "\nRun `make migrate` before deploying.\n");
+    exit(1);
+}
+
+/**
+ * Migration filenames present on disk but absent from the ledger.
+ *
+ * @return list<string>
+ */
+function pendingFor(string $scope, ?string $tenantDatabase): array
+{
+    $db = dbForScope($scope, $tenantDatabase);
+
+    $hasLedger = (bool)$db->query("SHOW TABLES LIKE 'schema_migrations'")->fetchColumn();
+    if (!$hasLedger) {
+        // No ledger yet. A populated legacy schema would be bootstrapped
+        // (not applied) on the next run, so that isn't drift; a genuinely
+        // empty database needs everything.
+        return databaseHasUserTables($db) ? [] : array_map('basename', listMigrationFiles($scope));
+    }
+
+    $applied = loadApplied($db);
+    $pending = [];
+    foreach (listMigrationFiles($scope) as $path) {
+        if (!isset($applied[basename($path)])) {
+            $pending[] = basename($path);
+        }
+    }
+    return $pending;
 }
 
 function printStatusForScope(string $scope, ?string $tenantDatabase = null): void

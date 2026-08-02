@@ -50,6 +50,61 @@ function ws_log(string $msg): void
     fwrite(STDERR, '[' . date('Y-m-d H:i:s') . '] ' . $msg . "\n");
 }
 
+/**
+ * Shared registry for recurring faults, keyed by a stable fault id.
+ * Holds ['last' => int, 'count' => int] per active fault.
+ *
+ * @return array<string,array{last:int,count:int}>
+ */
+function &ws_fault_registry(): array
+{
+    static $faults = [];
+    return $faults;
+}
+
+/**
+ * Log a recurring fault without flooding the file.
+ *
+ * A persistent failure here repeats on every pump tick (twice a second),
+ * which previously wrote 2,254 identical "Unknown column 'session_id'"
+ * lines and buried the one line that mattered. Log the first occurrence
+ * immediately, then at most one summary per interval.
+ *
+ * @param string $key Stable identifier for this fault (not the message).
+ */
+function ws_log_throttled(string $key, string $msg, int $intervalSec = 60): void
+{
+    $faults = &ws_fault_registry();
+    $now = time();
+
+    if (!isset($faults[$key])) {
+        ws_log($msg);
+        $faults[$key] = ['last' => $now, 'count' => 0];
+        return;
+    }
+
+    $faults[$key]['count']++;
+    $elapsed = $now - $faults[$key]['last'];
+    if ($elapsed >= $intervalSec) {
+        ws_log("{$msg} (repeated {$faults[$key]['count']}x in {$elapsed}s)");
+        $faults[$key] = ['last' => $now, 'count' => 0];
+    }
+}
+
+/**
+ * Mark a fault key healthy again. Emits a recovery line only if the fault
+ * was actually active, so healthy paths stay silent.
+ */
+function ws_log_recovered(string $key, string $msg): void
+{
+    $faults = &ws_fault_registry();
+    if (isset($faults[$key])) {
+        $suppressed = $faults[$key]['count'];
+        unset($faults[$key]);
+        ws_log($suppressed > 0 ? "{$msg} (after {$suppressed} suppressed errors)" : $msg);
+    }
+}
+
 $bind = (string)(Env::get('WEBSOCKET_BIND', '127.0.0.1') ?? '127.0.0.1');
 $port = (int)(Env::get('WEBSOCKET_PORT', '8090') ?? 8090);
 $listenAddr = "tcp://{$bind}:{$port}";
@@ -486,15 +541,36 @@ function pump_events(): void
         $groups[$key]['ids'][] = $id;
     }
 
-    foreach ($groups as $group) {
+    // Consecutive-failure counters keyed by tenant+session, used to back
+    // off a group whose reads keep failing instead of retrying twice a
+    // second forever. Reset the moment a read succeeds.
+    static $groupFailures = [];
+    static $groupRetryAt = [];
+
+    $now = time();
+
+    foreach ($groups as $key => $group) {
+        if (isset($groupRetryAt[$key]) && $now < $groupRetryAt[$key]) {
+            continue; // backing off after repeated failures
+        }
+
         $db = tenant_db($group['dbName']);
         if ($db === null) {
             continue;
         }
         try {
             $events = EventBus::after($db, $group['minLastId'], (int)$group['sessionId']);
+            unset($groupFailures[$key], $groupRetryAt[$key]);
+            ws_log_recovered("pump:{$key}", "pump recovered for {$key}");
         } catch (Throwable $e) {
-            ws_log('pump query failed: ' . $e->getMessage());
+            $groupFailures[$key] = ($groupFailures[$key] ?? 0) + 1;
+            // 1s, 2s, 4s … capped at 60s between retries for this group.
+            $backoff = min(60, 2 ** min(6, $groupFailures[$key] - 1));
+            $groupRetryAt[$key] = $now + $backoff;
+            ws_log_throttled(
+                "pump:{$key}",
+                "pump query failed for {$key} (retry in {$backoff}s): " . $e->getMessage()
+            );
             continue;
         }
         if ($events === []) {

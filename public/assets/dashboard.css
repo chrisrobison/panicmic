@@ -15,6 +15,33 @@
 
 .kj-console { display: flex; flex-direction: column; gap: 16px; }
 
+/* ---------- Operator alerts ----------
+ * Server-side conditions the KJ must act on (schema drift, degraded
+ * realtime). Deliberately loud: the failure mode this replaces was an
+ * app that looked fine while every realtime write was failing.
+ */
+.kj-alert {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.kj-alert strong { display: block; margin-bottom: 2px; }
+.kj-alert code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .08);
+  font-size: 13px;
+}
+.kj-alert--danger {
+  border-color: var(--danger);
+  background: rgba(239, 68, 68, .12);
+  color: #fca5a5;
+}
+.kj-alert--danger strong { color: #fecaca; }
+
 /* ---------- Header toolbar ---------- */
 .kj-toolbar {
   display: flex;

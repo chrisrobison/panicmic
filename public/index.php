@@ -12,6 +12,7 @@ use PanicMic\Http\BrandingController;
 use PanicMic\Http\ContentController;
 use PanicMic\Http\DisplayController;
 use PanicMic\Http\EventController;
+use PanicMic\Http\HealthController;
 use PanicMic\Http\MarketingController;
 use PanicMic\Http\PageRenderer;
 use PanicMic\Http\PublicEventsController;
@@ -286,6 +287,10 @@ try {
             'actor' => Auth::currentTenantActor(),
             'actingAsSuper' => Auth::actingAsSuper(),
         ]),
+        // Deep health: database reachability, tenant schema drift, and
+        // websocket daemon state. `/health` above is bare liveness and
+        // runs before tenant resolution; this one needs $db.
+        $path === '/api/health' && $method === 'GET' => HealthController::index($db),
         in_array($path, ['/api/songs', '/api/catalog'], true) && $method === 'GET' => Response::json(SongService::blendedSearch($db, Connection::super(), $_GET)),
         $path === '/api/queue' && $method === 'GET' => Response::json([
             'queue' => QueueService::queue($db, (int)$session['id'], Connection::super()),
