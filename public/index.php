@@ -191,13 +191,19 @@ try {
 
     AuthController::consumeImpersonationToken($tenant);
 
-    // Admin and API hits bootstrap a session if none exists; public
-    // landing pages do a read-only lookup so the "closed for tonight"
-    // banner can render instead of silently auto-starting a new session.
-    $isPublicLanding = $method === 'GET'
-        && ($path === '/' || $path === '/display' || $path === '/events'
-            || str_starts_with($path, '/request') || str_starts_with($path, '/api/public'));
-    $session = $isPublicLanding
+    // Session resolution: read-only vs bootstrapping.
+    //
+    // Creating a karaoke session is a deliberate act by the KJ, but the old
+    // rule let any non-"public landing" request bootstrap one — including
+    // /api/queue and /api/events, which displays poll continuously. A single
+    // display left running could therefore conjure a session on its own, and
+    // read paths disagreed with the /display page (which used latest()) about
+    // which session was current. That divergence is exactly how a display
+    // ends up rendering one session while the dashboard drives another.
+    //
+    // Rule: no GET ever creates a session. Reads observe; only KJ actions
+    // (starting a night, or a mutation on an existing show) bootstrap one.
+    $session = $method === 'GET'
         ? SessionService::latest($db, $tenant['night_name'])
         : SessionService::current($db, $tenant['night_name']);
     $settings = SettingsService::all($db);

@@ -327,19 +327,51 @@ function tenant_db(string $database): ?PDO
     }
 }
 
-/** Validate the session id exists for this tenant. */
-function session_exists(PDO $db, int $sessionId): bool
+/**
+ * Validate that the session id refers to a *live* session for this tenant.
+ *
+ * Existence alone is not enough. A display page bakes its session id into a
+ * meta tag at render time, so a screen opened before the KJ starts the night
+ * carries yesterday's (closed) session id. Accepting it put that client into
+ * a fanout group keyed on a dead session, where it received nothing and
+ * reported itself connected — the "display connects but never syncs" bug.
+ *
+ * Rejecting the handshake instead lets the client discover the real session
+ * and reconnect. Legacy vocabulary ('active'/'paused') is accepted alongside
+ * 'live' for databases that predate migration 007.
+ */
+function session_is_live(PDO $db, int $sessionId): bool
 {
     if ($sessionId <= 0) {
         return false;
     }
     try {
-        $stmt = $db->prepare('SELECT 1 FROM karaoke_sessions WHERE id = ? LIMIT 1');
+        $stmt = $db->prepare(
+            "SELECT 1 FROM karaoke_sessions
+             WHERE id = ? AND status IN ('live','active','paused')
+             LIMIT 1"
+        );
         $stmt->execute([$sessionId]);
         return (bool)$stmt->fetchColumn();
     } catch (Throwable $e) {
         ws_log('session lookup failed: ' . $e->getMessage());
         return false;
+    }
+}
+
+/** The tenant's current live session id, or 0 when the room is dark. */
+function live_session_id(PDO $db): int
+{
+    try {
+        $row = $db->query(
+            "SELECT id FROM karaoke_sessions
+             WHERE status IN ('live','active','paused')
+             ORDER BY starts_at DESC LIMIT 1"
+        )->fetchColumn();
+        return (int)($row ?: 0);
+    } catch (Throwable $e) {
+        ws_log('live session lookup failed: ' . $e->getMessage());
+        return 0;
     }
 }
 
@@ -390,9 +422,31 @@ function try_handshake(array &$client): bool
     $role = ($query['role'] ?? '') === 'kj' ? 'kj' : 'display';
 
     $db = tenant_db($tenant['database_name']);
-    if ($db === null || !session_exists($db, $sessionId)) {
-        @fwrite($client['socket'], "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
-        ws_log("handshake rejected: bad session {$sessionId} for tenant {$tenant['slug']}");
+    if ($db === null) {
+        @fwrite($client['socket'], "HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+        ws_log_throttled("db:{$tenant['slug']}", "handshake rejected: tenant DB unavailable for {$tenant['slug']}");
+        return false;
+    }
+
+    if (!session_is_live($db, $sessionId)) {
+        // Hand back the session the client *should* be on so it can rebind
+        // instead of reconnect-looping against a dead one. A stale display
+        // is the common case here, not an attack, so this is a normal and
+        // recoverable outcome.
+        $live = live_session_id($db);
+        $body = json_encode(['error' => 'stale_session', 'liveSessionId' => $live]) ?: '{}';
+        @fwrite(
+            $client['socket'],
+            "HTTP/1.1 409 Conflict\r\n"
+            . "Content-Type: application/json\r\n"
+            . 'Content-Length: ' . strlen($body) . "\r\n"
+            . "Connection: close\r\n\r\n"
+            . $body
+        );
+        ws_log_throttled(
+            "stale:{$tenant['slug']}:{$sessionId}",
+            "handshake rejected: session {$sessionId} not live for {$tenant['slug']} (live={$live})"
+        );
         return false;
     }
 

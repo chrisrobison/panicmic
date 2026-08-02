@@ -60,7 +60,8 @@ $canonical = Url::origin() . Request::path();
     }
   </style>
 </head>
-<body class="<?= e($page) ?><?= $actingAsSuper ? ' acting-as-super' : '' ?>">
+<body class="<?= e($page) ?><?= $actingAsSuper ? ' acting-as-super' : '' ?>"
+      data-session-live="<?= in_array((string)($session['status'] ?? ''), ['live', 'active', 'paused'], true) && (int)($session['id'] ?? 0) > 0 ? '1' : '0' ?>">
   <header class="topbar">
     <a class="brand" href="<?= e(Url::path('/')) ?>">
       <?php if ($logoUrl): ?><img src="<?= e($logoUrl) ?>" alt=""><?php endif; ?>

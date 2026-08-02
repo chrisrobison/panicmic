@@ -38,8 +38,22 @@ final class SessionController
         if ($name === '') {
             Response::json(['error' => 'Session name is required'], 400);
         }
+        $previousSessionId = (int)($session['id'] ?? 0);
         $newSession = SessionService::start($db, $name, $venueId, $eventId);
-        EventBus::publish($db, 'session:started', ['session' => $newSession], (int)$newSession['id']);
+
+        // Tenant-wide (NULL session), NOT scoped to the new session.
+        //
+        // Session-scoped events only reach clients already attached to that
+        // session, so scoping this one created a chicken-and-egg: a display
+        // still bound to last night's session could never be told that a new
+        // one had started, and sat stale until someone reloaded it by hand.
+        // Lifecycle events must reach every client regardless of attachment.
+        EventBus::publish($db, 'session:started', [
+            'session' => $newSession,
+            'sessionId' => (int)$newSession['id'],
+            'previousSessionId' => $previousSessionId,
+        ], null);
+
         Response::json(['session' => $newSession]);
     }
 
@@ -50,7 +64,15 @@ final class SessionController
         $sessionId = (int)$session['id'];
         SessionService::end($db, $sessionId, $_SESSION['tenant_user']['id'] ?? null);
         $stats = SessionService::statsFor($db, $sessionId);
-        EventBus::publish($db, 'session:ended', ['session_id' => $sessionId, 'stats' => $stats], $sessionId);
+
+        // Tenant-wide for the same reason as session:started — a display
+        // attached to this session needs to hear that it just ended, and
+        // clients on other sessions need to stop showing it as live.
+        EventBus::publish($db, 'session:ended', [
+            'session_id' => $sessionId,
+            'sessionId' => $sessionId,
+            'stats' => $stats,
+        ], null);
         EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
         EventBus::publish($db, 'display:state_changed', ['display' => DisplayService::state($db, $sessionId)], $sessionId);
         Response::json(['ok' => true, 'stats' => $stats]);
