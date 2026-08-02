@@ -140,7 +140,7 @@ $dashboardQr = QrCode::svg($singerUrl, 96);
           </div>
         </div>
 
-        <div class="panel connected-displays">
+        <div class="panel connected-displays" id="displays">
           <div class="panel-head"><h2>Connected Displays <span class="count-badge" data-displays-count>0</span></h2></div>
           <div data-connected-displays><p class="muted">Loading…</p></div>
         </div>
@@ -194,8 +194,11 @@ $dashboardQr = QrCode::svg($singerUrl, 96);
     <!-- Add Request modal -->
     <dialog data-add-request-modal class="add-request-modal">
       <form data-add-request-form>
-        <h2>Add Request</h2>
-        <p class="muted">Manually queue a singer — useful for walk-ups without a phone.</p>
+        <h2>Add a singer</h2>
+        <p class="muted">
+          Goes straight into the rotation. Works while requests are paused,
+          and the song doesn't have to be in your catalog.
+        </p>
         <label>Singer name
           <input name="display_name" required maxlength="160" placeholder="Singer's name" data-add-request-name>
         </label>
@@ -203,6 +206,26 @@ $dashboardQr = QrCode::svg($singerUrl, 96);
           <input type="search" data-song-query placeholder="Search the catalog…" autocomplete="off">
         </label>
         <div class="song-results" data-song-results></div>
+
+        <p class="picked-song" data-picked-song hidden>
+          <span data-picked-song-label></span>
+          <button type="button" class="link" data-clear-song>change</button>
+        </p>
+
+        <!-- Walk-ups whose song isn't in either catalog. Revealed on
+             demand so the catalog stays the default path. -->
+        <details class="walkup-song" data-walkup-song>
+          <summary>Not in the catalog? Type it in</summary>
+          <div class="walkup-song-fields">
+            <label>Song title
+              <input name="custom_song_title" maxlength="200" placeholder="Song title">
+            </label>
+            <label>Artist <span class="muted">(optional)</span>
+              <input name="custom_song_artist" maxlength="200" placeholder="Artist">
+            </label>
+          </div>
+        </details>
+
         <input type="hidden" name="song_id">
         <input type="hidden" name="shared_song_id">
         <label>Party

@@ -248,6 +248,33 @@
 .add-request-modal::backdrop { background: rgba(4, 6, 10, .72); }
 .add-request-modal form { display: grid; gap: 12px; }
 .add-request-modal .song-results { max-height: 220px; overflow-y: auto; }
+
+/* Confirmation that a song was actually chosen. The search box changing
+ * text was the only prior feedback, which read as "nothing happened". */
+.picked-song {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--ok);
+  background: rgba(34, 197, 94, .10);
+  font-size: 14px;
+}
+.picked-song [data-picked-song-label] { flex: 1 1 auto; min-width: 0; }
+.picked-song button { flex: 0 0 auto; }
+
+/* Free-text song entry for walk-ups, collapsed so the catalog stays the
+ * default path. */
+.walkup-song > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.walkup-song > summary:hover { color: var(--text); }
+.walkup-song-fields { display: grid; gap: 10px; padding-top: 8px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .modal-actions button { width: auto; padding: 10px 16px; }
 

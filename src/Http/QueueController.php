@@ -61,6 +61,53 @@ final class QueueController
         Response::json(['requestId' => $requestId]);
     }
 
+    /**
+     * POST /api/admin/requests — the KJ adds a walk-up singer.
+     *
+     * Separate from submit() on purpose. That endpoint is built for the
+     * room (rate limits, the requests-paused gate, duplicate prevention,
+     * mandatory catalog match); applying those to the operator meant a KJ
+     * could not add a walk-up while requests were paused, got rate-limited
+     * working through paper slips, and had no way to enter a song that
+     * wasn't already in a catalog. Walk-ups go straight into the rotation.
+     *
+     * @param array<string,mixed> $tenant
+     * @param array<string,mixed> $session
+     * @param array<string,mixed> $settings
+     */
+    public static function addWalkUp(PDO $db, array $tenant, array $session, array $settings): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+
+        $sessionId = (int)($session['id'] ?? 0);
+        if ($sessionId <= 0) {
+            Response::json(['error' => 'Start the night before adding singers'], 409);
+        }
+
+        try {
+            $result = QueueService::submitWalkUp($db, $sessionId, Request::input(), Connection::super());
+        } catch (\InvalidArgumentException $e) {
+            Response::json(['error' => $e->getMessage()], 422);
+        }
+
+        $requestId = $result['requestId'];
+        self::autoAttachYouTubeVideo($db, $requestId, $settings);
+
+        EventBus::publish($db, 'request:created', [
+            'requestId' => $requestId,
+            'source' => 'walkup',
+        ], $sessionId);
+        EventBus::publish($db, 'queue:updated', [
+            'queue' => QueueService::queue($db, $sessionId, Connection::super()),
+        ], $sessionId);
+
+        Response::json([
+            'requestId' => $requestId,
+            'singerId' => $result['singerId'],
+            'queue' => QueueService::queue($db, $sessionId, Connection::super()),
+        ], 201);
+    }
+
     /** @param array<string,mixed> $settings */
     private static function autoAttachYouTubeVideo(PDO $db, int $requestId, array $settings): void
     {

@@ -270,6 +270,10 @@ try {
         $path === '/admin/login' && $method === 'GET' => PageRenderer::render('admin-login', $tenant, $session),
         $path === '/admin/forgot-password' && $method === 'GET' => PageRenderer::render('admin-forgot-password', $tenant, $session),
         $path === '/admin/reset-password' && $method === 'GET' => PageRenderer::render('admin-reset-password', $tenant, $session),
+        // The KJ console. /admin/queue, /admin/singers and /display/control
+        // are legacy aliases kept for existing bookmarks — the console holds
+        // the queue, singers and display controls in one screen, so they are
+        // no longer advertised separately in the sidebar.
         in_array($path, ['/admin/dashboard', '/admin/queue', '/admin/singers', '/display/control'], true) && $method === 'GET' => PageRenderer::render('admin-dashboard', $tenant, $session),
         $path === '/admin/songs' && $method === 'GET' => PageRenderer::render('admin-songs', $tenant, $session),
         $path === '/admin/venues' && $method === 'GET' => PageRenderer::render('admin-venues', $tenant, $session),
@@ -315,6 +319,10 @@ try {
             ),
         ]),
         in_array($path, ['/api/requests', '/requests'], true) && $method === 'POST' => QueueController::submit($db, $tenant, $session, $settings),
+        // KJ walk-up entry. Distinct from the public endpoint above: no
+        // public rate limit, ignores the requests-paused gate, accepts a
+        // free-text song, and lands straight in the rotation.
+        $path === '/api/admin/requests' && $method === 'POST' => QueueController::addWalkUp($db, $tenant, $session, $settings),
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => QueueController::updateStatus($db, $tenant, $session, (int)$m[1]),
         (bool)preg_match('#^/api/requests/(\d+)/youtube$#', $path, $m) && $method === 'POST' => QueueController::attachYouTubeVideo($db, $session, (int)$m[1]),
         (bool)preg_match('#^/api/requests/(\d+)/manual-video$#', $path, $m) && $method === 'POST' => QueueController::attachManualVideo($db, $session, (int)$m[1]),
