@@ -379,10 +379,58 @@ function try_handshake(array &$client): bool
         'tenantSlug' => $tenant['slug'],
         'sessionId' => $sessionId,
     ]);
+    if ($role === 'display') {
+        relay_display_telemetry($client, 'display:online', []);
+    }
     return true;
 }
 
 /* ----------------------- Client message handling ----------------------- */
+
+/**
+ * Relay normalized display presence/status to KJ clients in the same
+ * tenant+session. Never trust a client-supplied screen or identity: those
+ * fields come from the Host/session/screen values fixed at handshake time.
+ *
+ * @param array<string,mixed> $source
+ * @param array<string,mixed> $message
+ */
+function relay_display_telemetry(array $source, string $type, array $message): void
+{
+    global $clients;
+
+    if (($source['role'] ?? '') !== 'display') {
+        return;
+    }
+    $payload = [
+        'type' => $type,
+        'screen' => (string)($source['screen'] ?? 'main'),
+        'displayClientId' => (string)($source['clientId'] ?? ''),
+        'serverTimeMs' => server_now_ms(),
+    ];
+    if ($type === 'display:ready' || $type === 'display:status') {
+        $payload['requestId'] = isset($message['requestId']) ? (int)$message['requestId'] : null;
+        $payload['videoId'] = substr((string)($message['videoId'] ?? ''), 0, 512);
+        $payload['provider'] = substr((string)($message['provider'] ?? ''), 0, 40);
+        $payload['playerState'] = substr((string)($message['playerState'] ?? ''), 0, 40);
+        $payload['currentTime'] = max(0.0, (float)($message['currentTime'] ?? 0));
+        $payload['muted'] = !empty($message['muted']);
+    } elseif ($type === 'display:error') {
+        $payload['message'] = substr((string)($message['message'] ?? 'Display error'), 0, 240);
+    }
+
+    foreach ($clients as &$target) {
+        if (!$target['handshaked']
+            || $target['role'] !== 'kj'
+            || $target['dbName'] !== $source['dbName']
+            || $target['sessionId'] !== $source['sessionId']
+        ) {
+            continue;
+        }
+        ws_send_json($target, $payload);
+    }
+    unset($target);
+}
 
 /** @param array<string,mixed> $client */
 function handle_text_message(array &$client, string $payload): bool
@@ -406,9 +454,7 @@ function handle_text_message(array &$client, string $payload): bool
         case 'display:ready':
         case 'display:status':
         case 'display:error':
-            // Status/telemetry from displays. The daemon doesn't persist
-            // these (read-only design); they're available for future
-            // KJ-presence relays. Accept and ignore for now.
+            relay_display_telemetry($client, (string)$msg['type'], $msg);
             return true;
         default:
             return true; // tolerate unknown client messages
@@ -446,7 +492,7 @@ function pump_events(): void
             continue;
         }
         try {
-            $events = EventBus::after($db, $group['minLastId']);
+            $events = EventBus::after($db, $group['minLastId'], (int)$group['sessionId']);
         } catch (Throwable $e) {
             ws_log('pump query failed: ' . $e->getMessage());
             continue;
@@ -532,11 +578,29 @@ function drop_client(array &$clients, int $id, string $reason): void
     if (!isset($clients[$id])) {
         return;
     }
-    $cid = $clients[$id]['clientId'] ?? '(pre-handshake)';
-    if (is_resource($clients[$id]['socket'])) {
-        @fclose($clients[$id]['socket']);
+    $dropped = $clients[$id];
+    $cid = $dropped['clientId'] ?? '(pre-handshake)';
+    if (is_resource($dropped['socket'])) {
+        @fclose($dropped['socket']);
     }
     unset($clients[$id]);
+    if (($dropped['handshaked'] ?? false) && ($dropped['role'] ?? '') === 'display') {
+        $stillOnline = false;
+        foreach ($clients as $peer) {
+            if ($peer['handshaked']
+                && $peer['role'] === 'display'
+                && $peer['dbName'] === $dropped['dbName']
+                && $peer['sessionId'] === $dropped['sessionId']
+                && $peer['screen'] === $dropped['screen']
+            ) {
+                $stillOnline = true;
+                break;
+            }
+        }
+        if (!$stillOnline) {
+            relay_display_telemetry($dropped, 'display:offline', []);
+        }
+    }
     ws_log("client {$cid} dropped: {$reason}");
 }
 

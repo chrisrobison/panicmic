@@ -78,6 +78,73 @@ final class DisplayService
             $data['tip_qr_url'] ?? null,
             $userId,
         ]);
+        if ($mode !== 'now_singing') {
+            self::stopPlayback($db, $sessionId, $screen);
+        }
+    }
+
+    /**
+     * Persist the authoritative playback clock for reconnecting displays.
+     *
+     * @param list<string> $screens
+     */
+    public static function startPlayback(
+        PDO $db,
+        int $sessionId,
+        array $screens,
+        string $commandId,
+        int $startedAtMs,
+        float $offsetSeconds,
+    ): void {
+        $stmt = $db->prepare(
+            "UPDATE display_state
+             SET play_command_id = ?, play_state = 'playing',
+                 play_started_at_ms = ?, play_offset_seconds = ?,
+                 play_updated_at = NOW()
+             WHERE session_id = ? AND screen = ?"
+        );
+        foreach (array_values(array_unique($screens)) as $screen) {
+            self::state($db, $sessionId, $screen);
+            $stmt->execute([$commandId, $startedAtMs, $offsetSeconds, $sessionId, $screen]);
+        }
+    }
+
+    /** @param list<string> $screens */
+    public static function setPlaybackPaused(PDO $db, int $sessionId, array $screens, bool $paused): void
+    {
+        $nowMs = (int)(microtime(true) * 1000);
+        $stmt = $paused
+            ? $db->prepare(
+                "UPDATE display_state
+                 SET play_state = 'paused',
+                     play_offset_seconds = play_offset_seconds
+                       + GREATEST(0, (? - COALESCE(play_started_at_ms, ?)) / 1000),
+                     play_started_at_ms = NULL,
+                     play_updated_at = NOW()
+                 WHERE session_id = ? AND screen = ?"
+            )
+            : $db->prepare(
+                "UPDATE display_state
+                 SET play_state = 'playing', play_started_at_ms = ?,
+                     play_updated_at = NOW()
+                 WHERE session_id = ? AND screen = ?"
+            );
+        foreach (array_values(array_unique($screens)) as $screen) {
+            $paused
+                ? $stmt->execute([$nowMs, $nowMs, $sessionId, $screen])
+                : $stmt->execute([$nowMs, $sessionId, $screen]);
+        }
+    }
+
+    public static function stopPlayback(PDO $db, int $sessionId, string $screen): void
+    {
+        $db->prepare(
+            "UPDATE display_state
+             SET play_command_id = NULL, play_state = 'stopped',
+                 play_started_at_ms = NULL, play_offset_seconds = 0,
+                 play_updated_at = NOW()
+             WHERE session_id = ? AND screen = ?"
+        )->execute([$sessionId, $screen]);
     }
 
     /**
@@ -100,7 +167,11 @@ final class DisplayService
             return [];
         }
         $db->prepare(
-            "UPDATE display_state SET mode = 'idle', now_request_id = NULL
+            "UPDATE display_state
+             SET mode = 'idle', now_request_id = NULL,
+                 play_command_id = NULL, play_state = 'stopped',
+                 play_started_at_ms = NULL, play_offset_seconds = 0,
+                 play_updated_at = NOW()
              WHERE session_id = ? AND now_request_id = ?"
         )->execute([$sessionId, $requestId]);
         return array_map('strval', $screens);
@@ -123,17 +194,29 @@ final class DisplayService
         );
         $stmt->execute([$sessionId]);
         $rows = $stmt->fetchAll();
+        $default = self::defaultScreen();
         if (!$rows) {
-            return [[
-                'screen' => self::DEFAULT_SCREEN,
-                'label' => 'Main projector',
-                'layout' => 'main',
-                'default_volume' => 80,
-                'show_qr' => 1,
-                'show_queue' => 1,
-            ]];
+            return [$default];
+        }
+        $hasMain = array_filter(
+            $rows,
+            static fn (array $row): bool => (string)$row['screen'] === self::DEFAULT_SCREEN,
+        );
+        if (!$hasMain) {
+            array_unshift($rows, $default);
         }
         return $rows;
+    }
+
+    /** @return array<string,mixed> */
+    public static function screen(PDO $db, int $sessionId, string $screen): array
+    {
+        foreach (self::listScreens($db, $sessionId) as $configuration) {
+            if ((string)$configuration['screen'] === $screen) {
+                return $configuration;
+            }
+        }
+        return [...self::defaultScreen(), 'screen' => $screen, 'label' => ucfirst($screen)];
     }
 
     /** @param array<string,mixed> $data */
@@ -173,5 +256,18 @@ final class DisplayService
            ->execute([$sessionId, $screen]);
         $db->prepare('DELETE FROM display_state WHERE session_id = ? AND screen = ?')
            ->execute([$sessionId, $screen]);
+    }
+
+    /** @return array<string,mixed> */
+    private static function defaultScreen(): array
+    {
+        return [
+            'screen' => self::DEFAULT_SCREEN,
+            'label' => 'Main projector',
+            'layout' => 'main',
+            'default_volume' => 80,
+            'show_qr' => 1,
+            'show_queue' => 1,
+        ];
     }
 }

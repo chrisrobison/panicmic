@@ -24,6 +24,12 @@ final class QueueController
      */
     public static function submit(PDO $db, array $tenant, array $session, array $settings): never
     {
+        Security::rateLimitDb(
+            Connection::super(),
+            Security::publicRequestBucket((int)$tenant['id']),
+            120,
+            3600,
+        );
         Security::rateLimit('public_request', 8, 60);
         if (!empty($session['requests_paused']) || !empty($session['queue_locked'])) {
             Response::json(['error' => 'Requests are currently closed'], 423);
@@ -46,11 +52,12 @@ final class QueueController
             Connection::super()
         );
         self::autoAttachYouTubeVideo($db, $requestId, $settings);
-        EventBus::publish($db, 'request:created', ['requestId' => $requestId]);
+        $sessionId = (int)$session['id'];
+        EventBus::publish($db, 'request:created', ['requestId' => $requestId], $sessionId);
         if (!empty($settings['auto_accept_requests']) && QueueService::approve($db, (int)$session['id'], $requestId)) {
-            EventBus::publish($db, 'request:approved', ['requestId' => $requestId, 'fastTrack' => false]);
+            EventBus::publish($db, 'request:approved', ['requestId' => $requestId, 'fastTrack' => false], $sessionId);
         }
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
         Response::json(['requestId' => $requestId]);
     }
 
@@ -85,8 +92,9 @@ final class QueueController
             Response::json(['error' => YouTubeService::lastError() ?? 'No YouTube karaoke video found or YouTube is not configured'], 404);
         }
         YouTubeService::attachToRequest($db, $requestId, $video);
-        EventBus::publish($db, 'request:youtube_attached', ['requestId' => $requestId, 'video' => $video]);
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        $sessionId = (int)$session['id'];
+        EventBus::publish($db, 'request:youtube_attached', ['requestId' => $requestId, 'video' => $video], $sessionId);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
         Response::json(['video' => $video]);
     }
 
@@ -112,8 +120,9 @@ final class QueueController
         if (!$found) {
             Response::json(['error' => 'Request not found'], 404);
         }
-        EventBus::publish($db, 'request:manual_video', ['requestId' => $requestId, 'url' => $url]);
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        $sessionId = (int)$session['id'];
+        EventBus::publish($db, 'request:manual_video', ['requestId' => $requestId, 'url' => $url], $sessionId);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
         Response::json(['manual_video_url' => $url === '' ? null : $url]);
     }
 
@@ -136,7 +145,7 @@ final class QueueController
             EventBus::publish($db, 'display:state_changed', [
                 'screen' => $screen,
                 'display' => DisplayService::state($db, (int)$session['id'], $screen),
-            ]);
+            ], (int)$session['id']);
         } elseif (in_array($status, ['completed', 'skipped', 'canceled'], true)) {
             // The act left the stage — clear it from any screen still showing
             // it so the "now singing" singer doesn't linger on the display.
@@ -144,11 +153,12 @@ final class QueueController
                 EventBus::publish($db, 'display:state_changed', [
                     'screen' => $screen,
                     'display' => DisplayService::state($db, (int)$session['id'], $screen),
-                ]);
+                ], (int)$session['id']);
             }
         }
-        EventBus::publish($db, 'request:status_changed', ['requestId' => $requestId, 'status' => $input['status'] ?? null]);
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        $sessionId = (int)$session['id'];
+        EventBus::publish($db, 'request:status_changed', ['requestId' => $requestId, 'status' => $input['status'] ?? null], $sessionId);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
         Response::json(['ok' => true]);
     }
 
@@ -165,8 +175,9 @@ final class QueueController
         if (!QueueService::approve($db, (int)$session['id'], $requestId, $fastTrack)) {
             Response::json(['error' => 'Request not found or already reviewed'], 404);
         }
-        EventBus::publish($db, 'request:approved', ['requestId' => $requestId, 'fastTrack' => $fastTrack]);
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        $sessionId = (int)$session['id'];
+        EventBus::publish($db, 'request:approved', ['requestId' => $requestId, 'fastTrack' => $fastTrack], $sessionId);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, $sessionId, Connection::super())], $sessionId);
         Response::json(['ok' => true]);
     }
 
@@ -178,7 +189,7 @@ final class QueueController
         if (!QueueService::setPriority($db, (int)$session['id'], $requestId, $priority)) {
             Response::json(['error' => 'Request not found'], 404);
         }
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())], (int)$session['id']);
         Response::json(['ok' => true, 'is_priority' => $priority]);
     }
 
@@ -188,15 +199,15 @@ final class QueueController
         Auth::requireTenantRole('kj', 'tenant_admin');
         $ids = array_map('intval', Request::input()['request_ids'] ?? []);
         QueueService::reorder($db, (int)$session['id'], $ids);
-        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())]);
+        EventBus::publish($db, 'queue:updated', ['queue' => QueueService::queue($db, (int)$session['id'], Connection::super())], (int)$session['id']);
         Response::json(['ok' => true]);
     }
 
-    public static function events(PDO $db): never
+    public static function events(PDO $db, int $sessionId): never
     {
         header('Cache-Control: no-store');
         $lastId = (int)($_GET['last_id'] ?? 0);
-        $events = EventBus::after($db, $lastId);
+        $events = EventBus::after($db, $lastId, $sessionId);
         $maxId = $lastId;
         foreach ($events as $event) {
             $id = (int)$event['id'];

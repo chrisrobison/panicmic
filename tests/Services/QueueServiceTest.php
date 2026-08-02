@@ -110,4 +110,18 @@ final class QueueServiceTest extends DatabaseTestCase
         self::assertCount(2, $requests);
         self::assertSame($requests[0]['singer_id'], $requests[1]['singer_id']);
     }
+
+    public function testPartialReorderKeepsOmittedItemsContiguous(): void
+    {
+        $song = SongService::create($this->tenantDb, ['title' => 'X', 'artist' => 'Y']);
+        $a = QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $song, 'display_name' => 'A'], 'a', false);
+        $b = QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $song, 'display_name' => 'B'], 'b', false);
+        $c = QueueService::submit($this->tenantDb, $this->sessionId, ['song_id' => $song, 'display_name' => 'C'], 'c', false);
+
+        QueueService::reorder($this->tenantDb, $this->sessionId, [$c, $a, $c, 999999]);
+        $queue = QueueService::queue($this->tenantDb, $this->sessionId);
+
+        self::assertSame([$c, $a, $b], array_map(static fn (array $row): int => (int)$row['request_id'], $queue));
+        self::assertSame([1, 2, 3], array_map(static fn (array $row): int => (int)$row['position'], $queue));
+    }
 }

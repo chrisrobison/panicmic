@@ -31,10 +31,13 @@ const PAGES = {
   public: () => import('./pages/public.js'),
   songs:  () => import('./pages/public.js'),     // /songs reuses public bindings
   me:     () => import('./pages/public.js'),     // /me also reuses public bindings
-  'admin-login':     () => import('./pages/admin-dashboard.js'),
+  'admin-login':     () => import('./pages/admin-auth.js'),
+  'admin-forgot-password': () => import('./pages/admin-auth.js'),
+  'admin-reset-password':  () => import('./pages/admin-auth.js'),
   'admin-dashboard': () => import('./pages/admin-dashboard.js'),
   'admin-content':   () => import('./pages/admin-dashboard.js'),
   'admin-settings':  () => import('./pages/admin-dashboard.js'),
+  'admin-team':      () => import('./pages/admin-team.js'),
   'admin-songs':     () => import('./pages/admin-songs.js'),
   'admin-venues':    () => import('./pages/admin-venues.js'),
   'admin-schedule':  () => import('./pages/admin-schedule.js'),
@@ -51,7 +54,7 @@ const loader = PAGES[appConfig.page] || PAGES.public;
 loader().then(mod => {
   if (typeof mod.init === 'function') mod.init();
 }).catch(err => {
-  // Surface to the console; access log + Sentry on the server side
-  // catch the request-level failures.
+  // Surface module failures locally. Server request failures are recorded
+  // by the structured error reporter and its optional remote webhook.
   console.error(`Failed to load page module for "${appConfig.page}":`, err);
 });

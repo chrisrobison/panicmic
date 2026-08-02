@@ -72,7 +72,7 @@ function renderConnectedDisplays(screens) {
     const info = displayPresence.get(s.screen);
     return info && (now - info.lastSeen) < 15000;
   });
-  const countLabel = String(connected.length || screens.length);
+  const countLabel = String(connected.length);
   $$('[data-displays-connected-count]').forEach(el => { el.textContent = countLabel; });
   $$('[data-displays-count]').forEach(el => { el.textContent = countLabel; });
 
@@ -198,13 +198,19 @@ async function blackoutAllDisplays() {
 
 function trackDisplayPresence(msg) {
   if (!msg || !msg.type) return;
-  if (msg.type === 'display:ready' || msg.type === 'display:status') {
+  if (msg.type === 'display:offline') {
+    displayPresence.delete(msg.screen || 'main');
+    loadDisplayScreens().catch(() => {});
+    return;
+  }
+  if (msg.type === 'display:online' || msg.type === 'display:ready' || msg.type === 'display:status') {
     const screen = msg.screen || 'main';
     displayPresence.set(screen, {
       lastSeen: Date.now(),
-      playerState: msg.playerState || (msg.type === 'display:ready' ? 'ready' : ''),
+      playerState: msg.playerState || (msg.type === 'display:ready' ? 'ready' : 'online'),
       requestId: msg.requestId ?? null,
     });
+    loadDisplayScreens().catch(() => {});
   }
 }
 
@@ -379,7 +385,12 @@ async function loadBilling() {
         <li><span>Additional KJ</span><strong>${escapeHtml(String(billing.additional_kj))} × ${dollars(billing.additional_kj_cents)}</strong></li>
         <li class="billing-total"><span>Projected monthly</span><strong>${dollars(billing.projected_monthly_cents)}</strong></li>
       </ul>
-      <p class="muted">Subscription status: ${escapeHtml(String(billing.subscription_status))}.</p>`;
+      <p class="muted">Subscription status: ${escapeHtml(String(billing.subscription_status))}.</p>
+      <p class="${billing.checkout_configured && billing.webhook_configured ? 'status-ok' : 'status-warn'}">
+        ${billing.checkout_configured && billing.webhook_configured
+          ? 'Online billing is configured.'
+          : 'Online billing is unavailable on this deployment; contact the service administrator.'}
+      </p>`;
   } catch (error) {
     panel.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`;
   }

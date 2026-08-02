@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace PanicMic\Services;
 
+use PanicMic\Support\Env;
+
 final class ContentService
 {
     /** @var array<string,string> */
@@ -79,8 +81,16 @@ final class ContentService
         return $files;
     }
 
-    /** @param array<string,mixed> $upload */
-    public static function storeUpload(string $accountName, array $upload): array
+    /**
+     * @param array<string,mixed> $upload
+     * @param list<string>|null $allowedExtensions
+     */
+    public static function storeUpload(
+        string $accountName,
+        array $upload,
+        ?array $allowedExtensions = null,
+        ?int $maxBytes = null,
+    ): array
     {
         if (($upload['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
             throw new \InvalidArgumentException('Upload failed');
@@ -90,18 +100,36 @@ final class ContentService
         if (!isset(self::MIME_TYPES[$extension])) {
             throw new \InvalidArgumentException('Unsupported file type');
         }
+        if ($allowedExtensions !== null && !in_array($extension, $allowedExtensions, true)) {
+            throw new \InvalidArgumentException('That file type is not allowed for this upload');
+        }
+        $maxBytes ??= self::configuredUploadLimit($extension);
+        $actualSize = filesize((string)$upload['tmp_name']);
+        if ($actualSize === false || $actualSize <= 0) {
+            throw new \InvalidArgumentException('Uploaded file is empty or unreadable');
+        }
+        if ($actualSize > $maxBytes) {
+            throw new \InvalidArgumentException(
+                'File exceeds the ' . max(1, (int)floor($maxBytes / 1048576)) . ' MB upload limit'
+            );
+        }
         // Magic-byte check: reject a file whose actual content doesn't
         // match its claimed extension (e.g. a renamed .exe → .png).
         self::verifyMagicBytes((string)$upload['tmp_name'], $extension);
         $safeBase = preg_replace('/[^A-Za-z0-9._-]+/', '-', pathinfo($original, PATHINFO_FILENAME)) ?: 'file';
-        $filename = trim($safeBase, '.-') . '-' . date('YmdHis') . '.' . $extension;
+        $filename = trim($safeBase, '.-') . '-' . date('YmdHis') . '-' . bin2hex(random_bytes(3)) . '.' . $extension;
         $dir = self::ensureTenantDirectory($accountName);
         $destination = $dir . '/' . $filename;
         if (!move_uploaded_file((string)$upload['tmp_name'], $destination)) {
             throw new \RuntimeException('Unable to save uploaded file');
         }
         chmod($destination, 0664);
-        return ['name' => $filename, 'url' => '/files/' . rawurlencode($filename), 'size' => filesize($destination)];
+        return [
+            'name' => $filename,
+            'url' => '/files/' . rawurlencode($filename),
+            'size' => filesize($destination),
+            'mime' => self::MIME_TYPES[$extension],
+        ];
     }
 
     public static function serve(string $accountName, string $path): never
@@ -118,10 +146,61 @@ final class ContentService
             exit;
         }
         $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+        $size = filesize($file);
+        if ($size === false) {
+            http_response_code(404);
+            exit;
+        }
+        $start = 0;
+        $end = $size - 1;
         header('Content-Type: ' . (self::MIME_TYPES[$extension] ?? 'application/octet-stream'));
-        header('Content-Length: ' . filesize($file));
+        header('Accept-Ranges: bytes');
         header('Cache-Control: public, max-age=3600');
-        readfile($file);
+        $range = (string)($_SERVER['HTTP_RANGE'] ?? '');
+        if ($range !== '') {
+            if (!preg_match('/^bytes=(\d*)-(\d*)$/', $range, $match)) {
+                header("Content-Range: bytes */{$size}");
+                http_response_code(416);
+                exit;
+            }
+            if ($match[1] === '' && $match[2] !== '') {
+                $suffix = min($size, (int)$match[2]);
+                $start = $size - $suffix;
+            } else {
+                $start = (int)$match[1];
+                if ($match[2] !== '') {
+                    $end = min($end, (int)$match[2]);
+                }
+            }
+            if ($start < 0 || $start > $end || $start >= $size) {
+                header("Content-Range: bytes */{$size}");
+                http_response_code(416);
+                exit;
+            }
+            http_response_code(206);
+            header("Content-Range: bytes {$start}-{$end}/{$size}");
+        }
+        $length = $end - $start + 1;
+        header('Content-Length: ' . $length);
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'HEAD') {
+            exit;
+        }
+        $handle = fopen($file, 'rb');
+        if ($handle === false) {
+            http_response_code(404);
+            exit;
+        }
+        fseek($handle, $start);
+        $remaining = $length;
+        while ($remaining > 0 && !feof($handle) && !connection_aborted()) {
+            $chunk = fread($handle, min(1048576, $remaining));
+            if ($chunk === false || $chunk === '') {
+                break;
+            }
+            echo $chunk;
+            $remaining -= strlen($chunk);
+        }
+        fclose($handle);
         exit;
     }
 
@@ -156,5 +235,14 @@ final class ContentService
                 $extension,
             ));
         }
+    }
+
+    private static function configuredUploadLimit(string $extension): int
+    {
+        $video = in_array($extension, ['mp4', 'webm', 'mov'], true);
+        $key = $video ? 'VIDEO_UPLOAD_MAX_MB' : 'CONTENT_UPLOAD_MAX_MB';
+        $default = $video ? 1024 : 25;
+        $megabytes = max(1, (int)(Env::get($key, (string)$default) ?? (string)$default));
+        return $megabytes * 1048576;
     }
 }

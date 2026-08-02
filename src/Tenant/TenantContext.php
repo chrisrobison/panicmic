@@ -136,10 +136,10 @@ final class TenantContext
 <body>
 <main>
   <h1>Nothing here yet</h1>
-  <p>No PanicMic venue is configured at <code>{$safeHost}</code>.</p>
-  <p>If you're a KJ trying to set up a new venue, you can start a free trial. If you're a singer, double-check the link your venue gave you.</p>
+  <p>No PanicMic KJ account is configured at <code>{$safeHost}</code>.</p>
+  <p>If you're a KJ, you can start a free trial and use your account at every venue you host. If you're a singer, double-check the link your KJ gave you.</p>
   <div class="actions">
-    <a class="button" href="{$signup}">Start a venue</a>
+    <a class="button" href="{$signup}">Start a KJ account</a>
     <a class="button secondary" href="https://{$marketing}/">About PanicMic</a>
   </div>
 </main>

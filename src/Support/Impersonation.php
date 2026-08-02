@@ -43,7 +43,13 @@ final class Impersonation
     private static function secret(): string
     {
         $secret = (string)(Env::get('CSRF_SECRET', '') ?? '');
-        return $secret !== '' ? $secret : 'panicmic-default-do-not-use-in-production';
+        if ($secret !== '') {
+            return $secret;
+        }
+        if (Env::get('APP_ENV') === 'production') {
+            throw new \RuntimeException('CSRF_SECRET must be configured in production');
+        }
+        return 'panicmic-development-impersonation-secret';
     }
 
     private static function base64UrlEncode(string $value): string

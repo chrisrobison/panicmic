@@ -27,7 +27,8 @@ final class AccessLog
     public static function begin(): void
     {
         // Resolve the toggle once per request.
-        $flag = (string)(Env::get('ACCESS_LOG', '0') ?? '0');
+        $default = Env::get('APP_ENV') === 'production' ? '1' : '0';
+        $flag = (string)(Env::get('ACCESS_LOG', $default) ?? $default);
         self::$enabled = $flag === '1' || strtolower($flag) === 'true';
         if (!self::$enabled) {
             return;

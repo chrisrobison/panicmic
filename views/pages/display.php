@@ -55,6 +55,10 @@ $requestQr = QrCode::svg($requestUrl, 320);
         <div class="display-between-qr"><?= $requestQr ?></div>
         <p class="display-between-cta">Scan to add your song</p>
       </div>
+      <div class="display-idle-message" data-display-idle-message hidden>
+        <strong>Ready for the next singer</strong>
+        <span>Requests are open from the singer link.</span>
+      </div>
 
       <!-- Lower third: singer name + song while playing -->
       <div class="display-lower-third" data-display-lower-third hidden>

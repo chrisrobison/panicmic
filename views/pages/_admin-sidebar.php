@@ -9,6 +9,7 @@ $links = [
   ['key' => 'schedule',  'href' => '/admin/schedule',  'label' => 'Schedule'],
   ['key' => 'songs',     'href' => '/admin/songs',     'label' => 'Song catalog'],
   ['key' => 'content',   'href' => '/admin/content',   'label' => 'Content'],
+  ['key' => 'team',      'href' => '/admin/team',      'label' => 'Team'],
   ['key' => 'settings',  'href' => '/admin/settings',  'label' => 'Settings'],
   ['key' => 'display',   'href' => '/display/control', 'label' => 'Display control'],
   ['key' => 'promote',   'href' => '/admin/promote',   'label' => 'Promote'],

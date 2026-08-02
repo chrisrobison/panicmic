@@ -6,6 +6,7 @@ namespace PanicMic\Http;
 
 use PanicMic\Auth\Auth;
 use PanicMic\Services\AlbumArtService;
+use PanicMic\Services\ContentService;
 use PanicMic\Services\EventBus;
 use PanicMic\Services\LastfmService;
 use PanicMic\Services\SongService;
@@ -54,6 +55,26 @@ final class SongController
         SongService::delete($db, $songId);
         EventBus::publish($db, 'song:deleted', ['songId' => $songId]);
         Response::json(['ok' => true]);
+    }
+
+    /** @param array<string,mixed> $tenant */
+    public static function uploadVideo(PDO $db, array $tenant, int $songId): never
+    {
+        Auth::requireTenantRole('kj', 'tenant_admin');
+        if (!SongService::find($db, $songId)) {
+            Response::json(['error' => 'Song not found'], 404);
+        }
+        if (empty($_FILES['video_file']) || !is_array($_FILES['video_file'])) {
+            Response::json(['error' => 'Choose an MP4, WebM, or MOV file'], 400);
+        }
+        $file = ContentService::storeUpload(
+            (string)$tenant['slug'],
+            $_FILES['video_file'],
+            ['mp4', 'webm', 'mov'],
+        );
+        SongService::setSelfHostedVideo($db, $songId, (string)$file['url']);
+        EventBus::publish($db, 'song:updated', ['songId' => $songId]);
+        Response::json(['video_url' => $file['url'], 'video_provider' => 'self_hosted']);
     }
 
     public static function importYouTubePlaylist(PDO $db): never

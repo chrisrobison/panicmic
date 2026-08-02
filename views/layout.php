@@ -5,6 +5,7 @@ declare(strict_types=1);
 use function PanicMic\Support\e;
 use PanicMic\Auth\Auth;
 use PanicMic\Support\Url;
+use PanicMic\Support\Request;
 
 $title = $tenant['venue_name'] . ' - ' . $tenant['night_name'];
 $bodyClass = str_replace('-', ' ', $page);
@@ -13,6 +14,10 @@ $profileImageUrl = !empty($tenant['profile_image_url']) ? (str_starts_with($tena
 $backgroundImageUrl = !empty($tenant['background_image_url']) ? (str_starts_with($tenant['background_image_url'], '/files/') ? Url::path($tenant['background_image_url']) : $tenant['background_image_url']) : null;
 $actingAsSuper = Auth::actingAsSuper();
 $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
+$description = $isAdminPage
+  ? 'PanicMic KJ console for managing karaoke requests, rotation, catalog, venues, and displays.'
+  : 'Search songs, request a karaoke performance, and follow the live queue for ' . $tenant['night_name'] . '.';
+$canonical = Url::origin() . Request::path();
 ?>
 <!doctype html>
 <html lang="en">
@@ -20,6 +25,13 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= e($title) ?></title>
+  <meta name="description" content="<?= e($description) ?>">
+  <link rel="canonical" href="<?= e($canonical) ?>">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="<?= e($title) ?>">
+  <meta property="og:description" content="<?= e($description) ?>">
+  <meta property="og:url" content="<?= e($canonical) ?>">
+  <meta name="theme-color" content="<?= e($tenant['background_color'] ?? '#101216') ?>">
   <meta name="csrf-token" content="<?= e($csrf) ?>">
   <meta name="app-base-path" content="<?= e($basePath) ?>">
   <meta name="app-page" content="<?= e($page) ?>">
@@ -75,10 +87,6 @@ $isAdminPage = str_starts_with((string)$page, 'admin-') || $page === 'display';
     <?php require __DIR__ . "/pages/{$page}.php"; ?>
   </main>
   <script src="<?= e(Url::path('/assets/vendor/geopattern.min.js')) ?>"></script>
-<?php if ($page === 'admin-songs'): ?>
-  <!-- album-art: Spotify-backed cover lookup used by the "Fetch Art" button in the song editor -->
-  <script src="https://cdn.jsdelivr.net/npm/album-art/index.min.js"></script>
-<?php endif; ?>
   <script type="module" src="<?= e(Url::path('/assets/main.js')) ?>"></script>
 </body>
 </html>

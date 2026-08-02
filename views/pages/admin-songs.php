@@ -39,6 +39,7 @@ $current = 'songs';
               <option value="karafun">KaraFun</option>
               <option value="stingray">Stingray</option>
               <option value="singa">Singa</option>
+              <option value="self_hosted">Self-hosted upload</option>
               <option value="local">Local file</option>
             </select>
           </label>

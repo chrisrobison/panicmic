@@ -21,7 +21,12 @@ final class DisplayController
         $screen = self::resolveScreen($input['screen'] ?? null);
         DisplayService::update($db, (int)$session['id'], $input, $_SESSION['tenant_user']['id'] ?? null, $screen);
         $display = DisplayService::state($db, (int)$session['id'], $screen);
-        EventBus::publish($db, 'display:state_changed', ['screen' => $screen, 'display' => $display]);
+        EventBus::publish(
+            $db,
+            'display:state_changed',
+            ['screen' => $screen, 'display' => $display],
+            (int)$session['id'],
+        );
         Response::json(['display' => $display]);
     }
 
@@ -107,6 +112,20 @@ final class DisplayController
 
         $commandId = bin2hex(random_bytes(8)); // 16-char hex token
         $startAtServerMs = (int)(microtime(true) * 1000) + $startDelayMs;
+        $targets = $screen === 'all'
+            ? array_map(
+                'strval',
+                array_column(DisplayService::listScreens($db, (int)$session['id']), 'screen'),
+            )
+            : [$screen];
+        DisplayService::startPlayback(
+            $db,
+            (int)$session['id'],
+            $targets,
+            $commandId,
+            $startAtServerMs,
+            $offsetSeconds,
+        );
 
         // Determine video info for the cue event.
         $ytId = $req['youtube_video_id'] ?? null;
@@ -131,7 +150,7 @@ final class DisplayController
                 'youtubeVideoId' => $ytId ?? '',
                 'videoUrl' => (string)$videoUrl,
             ],
-        ]);
+        ], (int)$session['id']);
 
         // Publish display:play_at event (WS daemon pushes this to displays).
         EventBus::publish($db, 'display:play_at', [
@@ -140,7 +159,7 @@ final class DisplayController
             'commandId' => $commandId,
             'startAtServerMs' => $startAtServerMs,
             'offsetSeconds' => $offsetSeconds,
-        ]);
+        ], (int)$session['id']);
 
         Response::json(['commandId' => $commandId, 'startAtServerMs' => $startAtServerMs]);
     }
@@ -180,9 +199,14 @@ final class DisplayController
             EventBus::publish($db, 'display:state_changed', [
                 'screen' => $target,
                 'display' => DisplayService::state($db, (int)$session['id'], (string)$target),
-            ]);
+            ], (int)$session['id']);
         }
-        EventBus::publish($db, 'announcement:shown', ['id' => $id, 'message' => $message, 'screen' => $screen]);
+        EventBus::publish(
+            $db,
+            'announcement:shown',
+            ['id' => $id, 'message' => $message, 'screen' => $screen],
+            (int)$session['id'],
+        );
         Response::json(['id' => $id, 'announcement_id' => $id]);
     }
 
@@ -200,7 +224,19 @@ final class DisplayController
         $input = Request::input();
         $screen = preg_replace('/[^a-z0-9_-]/i', '', (string)($input['screen'] ?? 'all')) ?: 'all';
         $paused = !empty($input['paused']);
-        EventBus::publish($db, $paused ? 'display:pause' : 'display:resume', ['screen' => $screen]);
+        $targets = $screen === 'all'
+            ? array_map(
+                'strval',
+                array_column(DisplayService::listScreens($db, (int)$session['id']), 'screen'),
+            )
+            : [$screen];
+        DisplayService::setPlaybackPaused($db, (int)$session['id'], $targets, $paused);
+        EventBus::publish(
+            $db,
+            $paused ? 'display:pause' : 'display:resume',
+            ['screen' => $screen],
+            (int)$session['id'],
+        );
         Response::json(['ok' => true, 'paused' => $paused, 'screen' => $screen]);
     }
 }

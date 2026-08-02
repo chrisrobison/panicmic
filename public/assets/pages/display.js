@@ -18,9 +18,11 @@ import {
   pauseDisplayPlayer,
   resumeDisplayPlayer,
   unlockDisplayAudio,
+  enableSynchronizedPlayback,
+  recoverDisplayPlayback,
 } from '../lib/queue.js';
 import { broadcast } from '../lib/broadcast.js';
-import { startRealtime, sendDisplayReady, sendDisplayStatus, onMessage, scheduleAtServerTime } from '../lib/ws.js';
+import { startRealtime, sendDisplayReady, sendDisplayStatus, onMessage, scheduleAtServerTime, isConnected } from '../lib/ws.js';
 
 function startDisplayBroadcastListener() {
   broadcast.subscribe(async data => {
@@ -40,6 +42,7 @@ function startDisplayBroadcastListener() {
 export function init() {
   // Let queue.js schedule synchronized playback against server time.
   setScheduler(scheduleAtServerTime);
+  enableSynchronizedPlayback();
 
   // Sound is muted until this real click/tap happens — required by every
   // browser's autoplay policy. Once unlocked it stays unlocked for the
@@ -60,10 +63,23 @@ export function init() {
   // "Pause" button are picked up without any daemon-side special-casing.
   startRealtime(events => {
     for (const e of events || []) {
-      if (e.event_name !== 'display:pause' && e.event_name !== 'display:resume') continue;
       const screen = e.payload?.screen || 'all';
       if (screen !== 'all' && screen !== appConfig.screen) continue;
-      if (e.event_name === 'display:pause') pauseDisplayPlayer(); else resumeDisplayPlayer();
+      if (e.event_name === 'display:pause') pauseDisplayPlayer();
+      if (e.event_name === 'display:resume') resumeDisplayPlayer();
+      // With WebSockets, typed cue/play-at messages follow the generic event
+      // and are handled below. Polling has no typed channel, so translate the
+      // same persisted events here.
+      if (!isConnected() && e.event_name === 'display:cue') {
+        const video = e.payload?.video || {};
+        cueDisplayPlayer({ requestId: e.payload?.requestId, ...video });
+      }
+      if (!isConnected() && e.event_name === 'display:play_at') {
+        playDisplayPlayerAt(
+          Number(e.payload?.startAtServerMs) || Date.now(),
+          Number(e.payload?.offsetSeconds) || 0,
+        );
+      }
     }
     loadQueue().catch(() => {});
   });
@@ -97,5 +113,5 @@ export function init() {
   }, 2000);
 
   // Initial load.
-  loadQueue().catch(() => {});
+  loadQueue().then(data => recoverDisplayPlayback(data.display || {})).catch(() => {});
 }

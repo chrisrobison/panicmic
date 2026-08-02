@@ -81,3 +81,55 @@ jobs:
 
       - name: make check
         run: make check
+
+  browser:
+    name: Browser smoke tests
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: pdo, pdo_mysql, json, fileinfo
+          coverage: none
+          tools: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Write browser-test .env
+        run: |
+          cat > .env <<EOF
+          APP_ENV=test
+          SESSION_NAME=panicmic_sid
+          CSRF_SECRET=browser-test-csrf-secret
+          TRUST_PROXY=false
+          SUPER_DB_HOST=127.0.0.1
+          SUPER_DB_PORT=3306
+          SUPER_DB_USER=root
+          SUPER_DB_PASSWORD=root
+          SUPER_DB_NAME=panicmic_test_super
+          TENANT_DB_HOST=127.0.0.1
+          TENANT_DB_PORT=3306
+          TENANT_DB_USER=root
+          TENANT_DB_PASSWORD=root
+          TENANT_DB_PREFIX=panicmic_
+          EOF
+      - name: Install browser test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Run browser smoke tests
+        run: npm run test:browser

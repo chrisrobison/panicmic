@@ -158,6 +158,18 @@ final class SongService
         $db->prepare('UPDATE songs SET album_art_url = ? WHERE id = ?')->execute([$url, $songId]);
     }
 
+    public static function setSelfHostedVideo(PDO $db, int $songId, string $url): bool
+    {
+        $stmt = $db->prepare(
+            "UPDATE songs
+             SET video_url = ?, video_provider = 'self_hosted',
+                 provider_url = NULL, provider_track_id = NULL
+             WHERE id = ? AND is_active = 1"
+        );
+        $stmt->execute([$url, $songId]);
+        return $stmt->rowCount() > 0;
+    }
+
     /** @return array<string,mixed>|null */
     public static function find(PDO $db, int $id): ?array
     {

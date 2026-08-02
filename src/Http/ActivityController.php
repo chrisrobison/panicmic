@@ -34,10 +34,11 @@ final class ActivityController
         $placeholders = implode(',', array_fill(0, count(self::VISIBLE), '?'));
         $stmt = $db->prepare(
             "SELECT id, event_name, payload, created_at FROM realtime_events
-             WHERE event_name IN ($placeholders)
+             WHERE session_id = ? AND event_name IN ($placeholders)
              ORDER BY id DESC LIMIT ?"
         );
-        $i = 1;
+        $stmt->bindValue(1, (int)$session['id'], PDO::PARAM_INT);
+        $i = 2;
         foreach (self::VISIBLE as $name) {
             $stmt->bindValue($i++, $name, PDO::PARAM_STR);
         }

@@ -28,13 +28,56 @@ const displayPlayer = {
   cancelScheduled: null,     // cancel fn for the scheduled play
   driftTimer: null,          // self-hosted drift correction interval
   actualStartMs: null,       // wall-clock ms when local playback began
+  pausedAtMs: null,          // used to keep drift clock stable across pause
   // True once the display page has had a real user gesture (a tap on the
   // "enable sound" overlay). Browsers block unmuted autoplay without one;
   // after it happens, the browser grants unmuted playback for the rest of
   // this page's life, so every subsequent song can play with sound too —
   // not just the one active when the tap happened.
   audioUnlocked: false,
+  defaultVolume: 80,
+  synchronizedCommands: false,
+  recoveredCommandId: null,
 };
+
+/** Make cue/play-at commands the only path allowed to start display media. */
+export function enableSynchronizedPlayback() {
+  displayPlayer.synchronizedCommands = true;
+}
+
+export function applyDisplayConfiguration(configuration = {}) {
+  const shell = $('[data-screen]');
+  if (!shell) return;
+  const layout = ['main', 'lyrics', 'lobby', 'stage', 'custom'].includes(configuration.layout)
+    ? configuration.layout
+    : 'main';
+  const showQr = Number(configuration.show_qr) === 1 || configuration.show_qr === true;
+  const showQueue = Number(configuration.show_queue) === 1 || configuration.show_queue === true;
+
+  shell.dataset.layout = layout;
+  shell.classList.toggle('display-no-qr', !showQr);
+  shell.classList.toggle('display-no-queue', !showQueue);
+  shell.classList.toggle('display-no-sidebar', !showQr && !showQueue);
+
+  const between = $('[data-display-between]');
+  const idle = $('[data-display-idle-message]');
+  const playing = !$('[data-display-player]')?.hidden;
+  if (between && idle) {
+    between.hidden = playing || !showQr;
+    idle.hidden = playing || showQr;
+  }
+
+  displayPlayer.defaultVolume = Math.max(0, Math.min(100, Number(configuration.default_volume) || 0));
+  applyPlayerVolume();
+}
+
+function applyPlayerVolume() {
+  if (displayPlayer.ytPlayer) {
+    try { displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume); } catch (_) {}
+  }
+  const video = $('[data-display-video]');
+  if (video) video.volume = displayPlayer.defaultVolume / 100;
+}
 
 /**
  * Unlock audio for the rest of this page's life. Must be called
@@ -58,7 +101,10 @@ export function unlockDisplayAudio() {
     recreateYouTubePlayerUnmuted();
   } else if (displayPlayer.provider === 'self_hosted') {
     const v = $('[data-display-video]');
-    if (v) v.muted = false;
+    if (v) {
+      v.muted = false;
+      v.volume = displayPlayer.defaultVolume / 100;
+    }
   }
 }
 
@@ -84,7 +130,7 @@ function recreateYouTubePlayerUnmuted() {
       onReady: e => {
         try {
           e.target.unMute();
-          e.target.setVolume(100);
+          e.target.setVolume(displayPlayer.defaultVolume);
           e.target.seekTo(resumeAt, true);
           if (wasPlaying) e.target.playVideo();
         } catch (_) {}
@@ -118,6 +164,7 @@ export async function loadQueue() {
   renderIncomingRequests(data.queue);
   renderAdminQueue(data.queue);
   renderDisplay(data.queue, data.display);
+  applyDisplayConfiguration(data.screen_config || {});
   renderAdminStats(data.queue);
   return data;
 }
@@ -391,6 +438,13 @@ function syncDisplayPlayer(current, display = {}, next = null) {
     }
   }
 
+  // Display pages use cue/play-at as the single playback authority. Queue
+  // refreshes still update labels and overlays, but must never start media:
+  // doing so would race the scheduled command and desynchronize screens.
+  if (displayPlayer.synchronizedCommands) {
+    return;
+  }
+
   // A KJ-supplied manual link wins when it is something the display can
   // actually embed (a YouTube URL or a direct video file). Non-embeddable
   // links stay a console-only convenience and fall through to the song's
@@ -443,6 +497,7 @@ function clearSyncPlaybackState() {
   displayPlayer.cued = false;
   displayPlayer.pendingPlayback = { startAtServerMs: null, offsetSeconds: 0 };
   displayPlayer.actualStartMs = null;
+  displayPlayer.pausedAtMs = null;
 }
 
 /* -------------------------------------------------------------- */
@@ -497,6 +552,7 @@ export function cueDisplayPlayer(videoInfo, onReady) {
             onReady: e => {
               try {
                 if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+                e.target.setVolume(displayPlayer.defaultVolume);
                 e.target.cueVideoById(info.youtubeVideoId);
               } catch (_) {}
             },
@@ -508,6 +564,7 @@ export function cueDisplayPlayer(videoInfo, onReady) {
       } else {
         try {
           if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+          displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
           displayPlayer.ytPlayer.cueVideoById(info.youtubeVideoId);
         } catch (_) { ready(); }
       }
@@ -521,6 +578,7 @@ export function cueDisplayPlayer(videoInfo, onReady) {
     if (empty) empty.hidden = true;
     if (!v) { ready(); return; }
     v.muted = !displayPlayer.audioUnlocked;
+    v.volume = displayPlayer.defaultVolume / 100;
     v.preload = 'auto';
     if (v.getAttribute('src') !== src) v.setAttribute('src', src);
     v.hidden = false;
@@ -539,6 +597,44 @@ export function cueDisplayPlayer(videoInfo, onReady) {
 }
 
 /**
+ * Rejoin an already-running command after a page refresh or display reconnect.
+ * The persisted server timestamp lets the display seek to the point the other
+ * screens should currently be showing.
+ */
+export function recoverDisplayPlayback(display = {}) {
+  if (!display || display.mode !== 'now_singing') return;
+  const commandId = String(display.play_command_id || '');
+  if (!commandId || commandId === displayPlayer.recoveredCommandId) return;
+  displayPlayer.recoveredCommandId = commandId;
+
+  const manualUrl = display.manual_video_url || '';
+  const manualYtId = extractYouTubeId(manualUrl);
+  const manualFileUrl = isPlayableVideoFile(manualUrl) ? manualUrl : '';
+  const ytId = display.youtube_video_id || extractYouTubeId(display.youtube_url || '');
+  const videoUrl = display.song_video_url || '';
+  const info = manualYtId
+    ? { provider: 'youtube', youtubeVideoId: manualYtId, videoUrl: '' }
+    : manualFileUrl
+      ? { provider: 'self_hosted', youtubeVideoId: '', videoUrl: manualFileUrl }
+      : ytId
+        ? { provider: 'youtube', youtubeVideoId: ytId, videoUrl: '' }
+        : videoUrl
+          ? { provider: 'self_hosted', youtubeVideoId: '', videoUrl }
+          : { provider: 'none', youtubeVideoId: '', videoUrl: '' };
+
+  cueDisplayPlayer({ requestId: display.now_request_id, ...info }, () => {
+    const baseOffset = Number(display.play_offset_seconds) || 0;
+    if (display.play_state === 'paused' || display.play_state === 'cued') {
+      if (baseOffset > 0) seekDisplayPlayer(baseOffset);
+      return;
+    }
+    const startedAt = Number(display.play_started_at_ms) || Date.now();
+    const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+    playDisplayPlayerAt(Date.now() + 50, baseOffset + elapsed);
+  });
+}
+
+/**
  * Schedule synchronized playback at a server wall-clock time (ms).
  * offsetSeconds seeks to this position before playing.
  */
@@ -547,6 +643,7 @@ export function playDisplayPlayerAt(startAtServerMs, offsetSeconds = 0) {
   if (displayPlayer.cancelScheduled) { try { displayPlayer.cancelScheduled(); } catch (_) {} }
   displayPlayer.cancelScheduled = scheduleAt(startAtServerMs, () => {
     displayPlayer.actualStartMs = Date.now();
+    displayPlayer.pausedAtMs = null;
     startSyncedPlayback(offsetSeconds);
   });
 }
@@ -555,6 +652,7 @@ function startSyncedPlayback(offsetSeconds) {
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
     try {
       if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
       if (offsetSeconds > 0) displayPlayer.ytPlayer.seekTo(offsetSeconds, true);
       displayPlayer.ytPlayer.playVideo();
     } catch (_) {}
@@ -564,6 +662,7 @@ function startSyncedPlayback(offsetSeconds) {
     const v = $('[data-display-video]');
     if (!v) return;
     v.muted = !displayPlayer.audioUnlocked;
+    v.volume = displayPlayer.defaultVolume / 100;
     try { if (offsetSeconds > 0) v.currentTime = offsetSeconds; } catch (_) {}
     v.play().catch(() => {});
     startDriftCorrection(v, offsetSeconds);
@@ -639,6 +738,9 @@ export function stopDisplayPlayerPublic() {
 
 /** Pause the active player in place (does not clear cue/seek state). */
 export function pauseDisplayPlayer() {
+  if (displayPlayer.pausedAtMs === null) {
+    displayPlayer.pausedAtMs = Date.now();
+  }
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
     try { displayPlayer.ytPlayer.pauseVideo(); } catch (_) {}
     return;
@@ -651,16 +753,25 @@ export function pauseDisplayPlayer() {
 
 /** Resume a paused player. */
 export function resumeDisplayPlayer() {
+  if (displayPlayer.pausedAtMs !== null && displayPlayer.actualStartMs !== null) {
+    displayPlayer.actualStartMs += Date.now() - displayPlayer.pausedAtMs;
+  }
+  displayPlayer.pausedAtMs = null;
   if (displayPlayer.provider === 'youtube' && displayPlayer.ytPlayer) {
     try {
       if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
       displayPlayer.ytPlayer.playVideo();
     } catch (_) {}
     return;
   }
   if (displayPlayer.provider === 'self_hosted') {
     const v = $('[data-display-video]');
-    if (v) { v.muted = !displayPlayer.audioUnlocked; v.play().catch(() => {}); }
+    if (v) {
+      v.muted = !displayPlayer.audioUnlocked;
+      v.volume = displayPlayer.defaultVolume / 100;
+      v.play().catch(() => {});
+    }
   }
 }
 
@@ -687,6 +798,7 @@ function showSelfHostedVideo(src) {
   }
   v.hidden = false;
   v.muted = !displayPlayer.audioUnlocked;
+  v.volume = displayPlayer.defaultVolume / 100;
   v.play().catch(() => {});
 }
 
@@ -716,6 +828,7 @@ function showYouTube(videoId) {
           onReady: e => {
             try {
               if (displayPlayer.audioUnlocked) e.target.unMute(); else e.target.mute();
+              e.target.setVolume(displayPlayer.defaultVolume);
               e.target.playVideo();
             } catch (_) {}
           },
@@ -736,13 +849,17 @@ function showYouTube(videoId) {
         const state = displayPlayer.ytPlayer.getPlayerState();
         if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
           if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+          displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
           displayPlayer.ytPlayer.playVideo();
         }
       } catch (_) {}
       return;
     }
 
-    try { if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute(); } catch (_) {}
+    try {
+      if (displayPlayer.audioUnlocked) displayPlayer.ytPlayer.unMute(); else displayPlayer.ytPlayer.mute();
+      displayPlayer.ytPlayer.setVolume(displayPlayer.defaultVolume);
+    } catch (_) {}
     displayPlayer.ytPlayer.loadVideoById(videoId);
   });
 }

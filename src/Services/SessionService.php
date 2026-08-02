@@ -115,7 +115,12 @@ final class SessionService
         )->execute([$sessionId]);
 
         $db->prepare(
-            "UPDATE display_state SET mode = 'idle' WHERE session_id = ?"
+            "UPDATE display_state
+             SET mode = 'idle', now_request_id = NULL,
+                 play_command_id = NULL, play_state = 'stopped',
+                 play_started_at_ms = NULL, play_offset_seconds = 0,
+                 play_updated_at = NOW()
+             WHERE session_id = ?"
         )->execute([$sessionId]);
 
         // Close the linked scheduled event, if any, so the calendar and

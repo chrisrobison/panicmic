@@ -38,6 +38,10 @@ final class Security
         header('X-Frame-Options: SAMEORIGIN');
         header('X-Content-Type-Options: nosniff');
         header('Referrer-Policy: same-origin');
+        header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+        if (Env::get('APP_ENV') === 'production') {
+            header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+        }
         $nonce = self::styleNonce();
         // YouTube IFrame Player needs script + frame access; everything
         // else stays same-origin.
@@ -49,7 +53,7 @@ final class Security
              // 'self' lets the KJ dashboard embed /display in an iframe for
              // the live Crowd Display Preview panel.
              . "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; "
-             . "object-src 'none'";
+             . "object-src 'none'; base-uri 'self'; form-action 'self'";
         header('Content-Security-Policy: ' . $csp);
     }
 
@@ -201,5 +205,17 @@ final class Security
     {
         $ip ??= ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
         return 'signup:' . $ip;
+    }
+
+    /**
+     * Durable throttle for the unauthenticated song-request endpoint.
+     * Tenant scoping prevents traffic at one karaoke room from consuming
+     * another room's allowance, while the IP component survives cookie and
+     * PHP-session rotation.
+     */
+    public static function publicRequestBucket(int $tenantId, ?string $ip = null): string
+    {
+        $ip ??= ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        return 'request:' . $tenantId . ':' . $ip;
     }
 }

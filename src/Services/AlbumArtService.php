@@ -27,6 +27,14 @@ final class AlbumArtService
     private const SUBDIR = 'album-art';
     private const CANDIDATE_EXTENSIONS = ['jpg', 'png', 'webp', 'gif'];
     private const DOWNLOAD_TIMEOUT = 10;
+    private const MAX_DOWNLOAD_BYTES = 5_242_880;
+    /** @var array<string,string> */
+    private const IMAGE_MIME_EXTENSIONS = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/webp' => 'webp',
+        'image/gif' => 'gif',
+    ];
 
     // ------------------------------------------------------------------ //
     //  Public API                                                          //
@@ -115,25 +123,15 @@ final class AlbumArtService
      */
     private static function downloadAndCache(string $tenantSlug, string $key, string $url): ?string
     {
-        // Infer extension from the URL path; default to jpg.
-        $urlPath = (string)(parse_url($url, PHP_URL_PATH) ?? '');
-        $ext = strtolower(pathinfo($urlPath, PATHINFO_EXTENSION));
-        if ($ext === 'jpeg') {
-            $ext = 'jpg';
-        }
-        if (!in_array($ext, self::CANDIDATE_EXTENSIONS, true)) {
-            $ext = 'jpg';
+        $data = self::fetchValidated($url);
+        if ($data === null || strlen($data) < 100) {
+            return null;
         }
 
-        $context = stream_context_create([
-            'http' => [
-                'timeout' => self::DOWNLOAD_TIMEOUT,
-                'ignore_errors' => true,
-                'header' => "User-Agent: PanicMic/1.0\r\n",
-            ],
-        ]);
-        $data = @file_get_contents($url, false, $context);
-        if ($data === false || strlen($data) < 100) {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = $finfo !== false ? (string)finfo_buffer($finfo, $data) : '';
+        $ext = self::IMAGE_MIME_EXTENSIONS[$mime] ?? null;
+        if ($ext === null) {
             return null;
         }
 
@@ -145,6 +143,150 @@ final class AlbumArtService
         @chmod($filePath, 0664);
 
         return '/files/' . self::SUBDIR . '/' . $key . '.' . $ext;
+    }
+
+    /**
+     * Fetch a public HTTP(S) image without following an unvalidated redirect.
+     * Each hop is DNS-checked to block loopback, private, link-local, and
+     * reserved networks. The byte ceiling prevents a remote host from filling
+     * tenant storage or exhausting PHP memory.
+     */
+    private static function fetchValidated(string $url): ?string
+    {
+        for ($redirects = 0; $redirects <= 3; $redirects++) {
+            if (!self::isPublicImageUrl($url)) {
+                return null;
+            }
+            $context = stream_context_create([
+                'http' => [
+                    'timeout' => self::DOWNLOAD_TIMEOUT,
+                    'ignore_errors' => true,
+                    'follow_location' => 0,
+                    'max_redirects' => 0,
+                    'header' => "User-Agent: PanicMic/1.0\r\nAccept: image/*\r\n",
+                ],
+                'ssl' => [
+                    'verify_peer' => true,
+                    'verify_peer_name' => true,
+                ],
+            ]);
+            $data = @file_get_contents(
+                $url,
+                false,
+                $context,
+                0,
+                self::MAX_DOWNLOAD_BYTES + 1,
+            );
+            /** @var list<string> $http_response_header */
+            $headers = $http_response_header;
+            $status = self::responseStatus($headers);
+            if ($status >= 300 && $status < 400) {
+                $location = self::responseHeader($headers, 'location');
+                if ($location === null) {
+                    return null;
+                }
+                $url = self::resolveRedirect($url, $location);
+                continue;
+            }
+            if ($status < 200 || $status >= 300 || $data === false
+                || strlen($data) > self::MAX_DOWNLOAD_BYTES
+            ) {
+                return null;
+            }
+            return $data;
+        }
+        return null;
+    }
+
+    private static function isPublicImageUrl(string $url): bool
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return false;
+        }
+        $scheme = strtolower((string)($parts['scheme'] ?? ''));
+        $host = strtolower(rtrim((string)($parts['host'] ?? ''), '.'));
+        $port = isset($parts['port']) ? (int)$parts['port'] : ($scheme === 'https' ? 443 : 80);
+        if (!in_array($scheme, ['http', 'https'], true)
+            || $host === ''
+            || isset($parts['user'])
+            || isset($parts['pass'])
+            || !in_array($port, [80, 443], true)
+        ) {
+            return false;
+        }
+
+        $addresses = [];
+        if (filter_var($host, FILTER_VALIDATE_IP)) {
+            $addresses[] = $host;
+        } else {
+            $records = @dns_get_record($host, DNS_A | DNS_AAAA);
+            foreach (is_array($records) ? $records : [] as $record) {
+                $address = $record['ip'] ?? $record['ipv6'] ?? null;
+                if (is_string($address)) {
+                    $addresses[] = $address;
+                }
+            }
+        }
+        if ($addresses === []) {
+            return false;
+        }
+        foreach (array_unique($addresses) as $address) {
+            if (filter_var(
+                $address,
+                FILTER_VALIDATE_IP,
+                FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE,
+            ) === false) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** @param list<string> $headers */
+    private static function responseStatus(array $headers): int
+    {
+        foreach ($headers as $header) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#i', $header, $match)) {
+                return (int)$match[1];
+            }
+        }
+        return 0;
+    }
+
+    /** @param list<string> $headers */
+    private static function responseHeader(array $headers, string $name): ?string
+    {
+        $prefix = strtolower($name) . ':';
+        foreach ($headers as $header) {
+            if (str_starts_with(strtolower($header), $prefix)) {
+                return trim(substr($header, strlen($prefix)));
+            }
+        }
+        return null;
+    }
+
+    private static function resolveRedirect(string $baseUrl, string $location): string
+    {
+        if (preg_match('#^https?://#i', $location)) {
+            return $location;
+        }
+        $base = parse_url($baseUrl);
+        if (!is_array($base) || empty($base['scheme']) || empty($base['host'])) {
+            return '';
+        }
+        if (str_starts_with($location, '//')) {
+            return $base['scheme'] . ':' . $location;
+        }
+        $authority = $base['scheme'] . '://' . $base['host'];
+        if (isset($base['port'])) {
+            $authority .= ':' . $base['port'];
+        }
+        if (str_starts_with($location, '/')) {
+            return $authority . $location;
+        }
+        $directory = rtrim(str_replace('\\', '/', dirname((string)($base['path'] ?? '/'))), '/');
+        return $authority . ($directory !== '' ? $directory : '') . '/' . $location;
     }
 
     private static function cacheDir(string $tenantSlug): string

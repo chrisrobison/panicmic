@@ -84,24 +84,14 @@ export function init() {
 
   // Fetch album art for a song (click-delegated).
   //
-  // Strategy:
-  //   1. Try the Spotify-backed album-art JS library (loaded from CDN as
-  //      window.albumArt). If it returns a URL, POST it to cache-album-art-url
-  //      so the server downloads and stores a local copy.
-  //   2. If the CDN library is unavailable or returns nothing, fall back to the
-  //      backend Last.fm lookup via fetch-album-art.
-  //
-  // Either way the response contains the new local /files/… URL which we write
-  // into the album_art_url input and use to update the preview thumbnail.
+  // Discovery stays same-origin through the backend Last.fm integration. The
+  // server validates the bytes and caches a local copy before returning it.
   document.addEventListener('click', async event => {
     const fetchBtn = event.target.closest('[data-fetch-art]');
     if (!fetchBtn) return;
     event.preventDefault();
 
     const songId   = fetchBtn.dataset.fetchArt;
-    const artist   = fetchBtn.dataset.songArtist;
-    const title    = fetchBtn.dataset.songTitle;
-    const album    = fetchBtn.dataset.songAlbum;
     const form     = fetchBtn.closest('[data-song-update]');
     const urlInput = form?.querySelector('[name="album_art_url"]');
     const coverImg = form?.querySelector('.song-card-art');
@@ -111,31 +101,7 @@ export function init() {
     if (status) setStatus(status, 'Fetching album art…');
 
     try {
-      let data;
-
-      // Try Spotify (album-art CDN library) first.
-      const albumArtLib = /** @type {Function|undefined} */ (window.albumArt);
-      if (typeof albumArtLib === 'function') {
-        let spotifyUrl = null;
-        try {
-          const opts = album ? { album } : {};
-          spotifyUrl = await albumArtLib(artist, opts);
-        } catch (_) {
-          spotifyUrl = null;
-        }
-
-        if (spotifyUrl) {
-          data = await api(`/api/admin/songs/${songId}/cache-album-art-url`, {
-            method: 'POST',
-            body: JSON.stringify({ url: spotifyUrl }),
-          });
-        }
-      }
-
-      // Fall back to backend Last.fm lookup if Spotify gave nothing.
-      if (!data) {
-        data = await api(`/api/admin/songs/${songId}/fetch-album-art`, { method: 'POST' });
-      }
+      const data = await api(`/api/admin/songs/${songId}/fetch-album-art`, { method: 'POST' });
 
       // Update the UI with the newly cached local URL.
       if (data?.album_art_url) {
@@ -150,6 +116,37 @@ export function init() {
       if (status) setStatus(status, `Could not fetch art: ${error.message}`);
     } finally {
       fetchBtn.disabled = false;
+    }
+  });
+
+  // Upload a tenant-owned karaoke video and attach it directly to the song.
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('[data-upload-video]');
+    if (!button) return;
+    const form = button.closest('[data-song-update]');
+    const input = form?.querySelector('[name="video_file"]');
+    const status = form ? $('[data-status]', form) : null;
+    if (!input?.files?.[0]) {
+      if (status) setStatus(status, 'Choose a video file first.');
+      return;
+    }
+    const body = new FormData();
+    body.append('video_file', input.files[0]);
+    button.disabled = true;
+    if (status) setStatus(status, 'Uploading video… keep this page open.');
+    try {
+      const result = await api(`/api/admin/songs/${button.dataset.uploadVideo}/video`, {
+        method: 'POST',
+        body,
+      });
+      form.querySelector('[name="video_url"]').value = result.video_url;
+      form.querySelector('[name="video_provider"]').value = result.video_provider;
+      input.value = '';
+      if (status) setStatus(status, 'Video uploaded and attached.');
+    } catch (error) {
+      if (status) setStatus(status, error.message);
+    } finally {
+      button.disabled = false;
     }
   });
 

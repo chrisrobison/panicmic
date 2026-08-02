@@ -4,6 +4,7 @@
     <label>Email<input name="email" type="email" required></label>
     <label>Password<input name="password" type="password" required></label>
     <button class="primary" type="submit">Sign In</button>
-    <p data-status></p>
+    <p role="status" data-status></p>
+    <p><a href="<?= \PanicMic\Support\e(\PanicMic\Support\Url::path('/admin/forgot-password')) ?>">Forgot password?</a></p>
   </form>
 </section>

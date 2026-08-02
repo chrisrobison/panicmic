@@ -6,6 +6,7 @@ namespace PanicMic\Http;
 
 use PanicMic\Auth\Auth;
 use PanicMic\Database\Connection;
+use PanicMic\Services\PasswordResetService;
 use PanicMic\Support\Impersonation;
 use PanicMic\Support\Request;
 use PanicMic\Support\Response;
@@ -37,6 +38,40 @@ final class AuthController
     public static function logoutTenant(): never
     {
         unset($_SESSION['tenant_user']);
+        Response::json(['ok' => true]);
+    }
+
+    public static function requestPasswordReset(PDO $db, string $origin): never
+    {
+        $email = strtolower(trim((string)(Request::input()['email'] ?? '')));
+        Security::rateLimitDb(
+            Connection::super(),
+            'password-reset:' . ($_SERVER['REMOTE_ADDR'] ?? 'unknown'),
+            10,
+            3600,
+        );
+        if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            PasswordResetService::request($db, $email, $origin);
+        }
+        // Always return the same response to prevent account enumeration.
+        Response::json([
+            'ok' => true,
+            'message' => 'If that address belongs to an active team member, a reset link is on its way.',
+        ]);
+    }
+
+    public static function resetPassword(PDO $db): never
+    {
+        $input = Request::input();
+        $token = strtolower(trim((string)($input['token'] ?? '')));
+        $password = (string)($input['password'] ?? '');
+        $confirmation = (string)($input['password_confirmation'] ?? '');
+        if (!hash_equals($password, $confirmation)) {
+            Response::json(['error' => 'Passwords do not match'], 422);
+        }
+        if (!PasswordResetService::reset($db, $token, $password)) {
+            Response::json(['error' => 'This reset link is invalid or has expired'], 422);
+        }
         Response::json(['ok' => true]);
     }
 

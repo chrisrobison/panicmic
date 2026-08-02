@@ -12,6 +12,7 @@ use PanicMic\Http\BrandingController;
 use PanicMic\Http\ContentController;
 use PanicMic\Http\DisplayController;
 use PanicMic\Http\EventController;
+use PanicMic\Http\MarketingController;
 use PanicMic\Http\PageRenderer;
 use PanicMic\Http\PublicEventsController;
 use PanicMic\Http\QueueController;
@@ -21,6 +22,7 @@ use PanicMic\Http\SettingsController;
 use PanicMic\Http\SignupController;
 use PanicMic\Http\SongController;
 use PanicMic\Http\SuperController;
+use PanicMic\Http\TeamController;
 use PanicMic\Http\VenueController;
 use PanicMic\Services\ContentService;
 use PanicMic\Services\DisplayService;
@@ -34,6 +36,7 @@ use PanicMic\Support\ErrorReporter;
 use PanicMic\Support\Request;
 use PanicMic\Support\Response;
 use PanicMic\Support\Security;
+use PanicMic\Support\Url;
 use PanicMic\Tenant\TenantContext;
 
 require dirname(__DIR__) . '/src/autoload.php';
@@ -62,7 +65,10 @@ $onSignupHost = $signupHost !== '' && TenantContext::host() === $signupHost;
 $superHost = strtolower((string)Env::get('SUPER_HOST', '') ?? '');
 $onSuperHost = $superHost !== '' && TenantContext::host() === $superHost;
 
-$tenantContext = ($onSignupHost || $onSuperHost) ? null : TenantContext::resolve();
+$marketingHost = strtolower((string)Env::get('MARKETING_HOST', 'panicmic.com') ?? 'panicmic.com');
+$onMarketingHost = $marketingHost !== '' && TenantContext::host() === $marketingHost;
+
+$tenantContext = ($onSignupHost || $onSuperHost || $onMarketingHost) ? null : TenantContext::resolve();
 
 try {
     if ($path === '/health') {
@@ -113,6 +119,29 @@ try {
         }
         if (str_starts_with($path, '/super') || str_starts_with($path, '/api/super')) {
             SuperController::dispatch($path, $method);
+        }
+        Response::json(['error' => 'Not found'], 404);
+    }
+
+    if ($onMarketingHost) {
+        if ($path === '/' && $method === 'GET') {
+            MarketingController::render('home');
+        }
+        if ($path === '/privacy' && $method === 'GET') {
+            MarketingController::render('privacy');
+        }
+        if ($path === '/terms' && $method === 'GET') {
+            MarketingController::render('terms');
+        }
+        if ($path === '/signup' && $method === 'GET') {
+            if ($signupHost !== '') {
+                Response::redirect('https://' . $signupHost . '/');
+            }
+            SignupController::page();
+        }
+        if ($path === '/api/signup' && $method === 'POST') {
+            Security::requireCsrf();
+            SignupController::register();
         }
         Response::json(['error' => 'Not found'], 404);
     }
@@ -174,7 +203,12 @@ try {
 
     // Admin routes require an active tenant session or super impersonation.
     if ($method === 'GET'
-        && ((str_starts_with($path, '/admin') && $path !== '/admin/login') || $path === '/display/control')
+        && ((str_starts_with($path, '/admin')
+            && !in_array($path, [
+                '/admin/login',
+                '/admin/forgot-password',
+                '/admin/reset-password',
+            ], true)) || $path === '/display/control')
         && empty($_SESSION['tenant_user'])
         && empty($_SESSION['super_admin'])
     ) {
@@ -203,6 +237,7 @@ try {
     $isMutation = in_array($method, ['POST', 'PATCH', 'DELETE'], true);
     $isBillingExempt = in_array($path, [
         '/api/admin/login', '/api/admin/logout',
+        '/api/admin/password-reset/request', '/api/admin/password-reset/confirm',
         '/api/admin/end-impersonation', '/admin/end-impersonation',
         '/api/admin/branding', '/api/admin/settings',
         // Allow lapsed tenants to reactivate via the billing UI.
@@ -226,12 +261,18 @@ try {
         $path === '/events' && $method === 'GET' => PageRenderer::render('public-events', $tenant, $session),
         $path === '/help' && $method === 'GET' => PageRenderer::render('help', $tenant, $session),
         $path === '/admin/login' && $method === 'GET' => PageRenderer::render('admin-login', $tenant, $session),
+        $path === '/admin/forgot-password' && $method === 'GET' => PageRenderer::render('admin-forgot-password', $tenant, $session),
+        $path === '/admin/reset-password' && $method === 'GET' => PageRenderer::render('admin-reset-password', $tenant, $session),
         in_array($path, ['/admin/dashboard', '/admin/queue', '/admin/singers', '/display/control'], true) && $method === 'GET' => PageRenderer::render('admin-dashboard', $tenant, $session),
         $path === '/admin/songs' && $method === 'GET' => PageRenderer::render('admin-songs', $tenant, $session),
         $path === '/admin/venues' && $method === 'GET' => PageRenderer::render('admin-venues', $tenant, $session),
         $path === '/admin/schedule' && $method === 'GET' => PageRenderer::render('admin-schedule', $tenant, $session),
         $path === '/admin/content' && $method === 'GET' => PageRenderer::render('admin-content', $tenant, $session),
         $path === '/admin/settings' && $method === 'GET' => PageRenderer::render('admin-settings', $tenant, $session),
+        $path === '/admin/team' && $method === 'GET' => (static function () use ($tenant, $session): never {
+            Auth::requireTenantRole('tenant_admin');
+            PageRenderer::render('admin-team', $tenant, $session);
+        })(),
         $path === '/admin/promote' && $method === 'GET' => PageRenderer::render('admin-promote', $tenant, $session),
         $path === '/admin/help' && $method === 'GET' => PageRenderer::render('admin-help', $tenant, $session),
         in_array($path, ['/display', '/display/fullscreen'], true) && $method === 'GET' => PageRenderer::render('display', $tenant, $session),
@@ -256,6 +297,11 @@ try {
                 (int)$session['id'],
                 preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) ?: 'main'
             ),
+            'screen_config' => DisplayService::screen(
+                $db,
+                (int)$session['id'],
+                preg_replace('/[^a-z0-9_-]/i', '', (string)($_GET['screen'] ?? '')) ?: 'main',
+            ),
         ]),
         in_array($path, ['/api/requests', '/requests'], true) && $method === 'POST' => QueueController::submit($db, $tenant, $session, $settings),
         (bool)preg_match('#^/api/requests/(\d+)/status$#', $path, $m) && $method === 'PATCH' => QueueController::updateStatus($db, $tenant, $session, (int)$m[1]),
@@ -273,7 +319,7 @@ try {
         $path === '/api/display/pause' && $method === 'POST' => DisplayController::pause($db, $tenant, $session),
         $path === '/api/announcements' && $method === 'POST' => DisplayController::announce($db, $tenant, $session),
         $path === '/api/admin/activity' && $method === 'GET' => ActivityController::index($db, $tenant, $session),
-        $path === '/api/events' && $method === 'GET' => QueueController::events($db),
+        $path === '/api/events' && $method === 'GET' => QueueController::events($db, (int)$session['id']),
 
         // ----- Public events / schedule (read-only, unauthenticated)
         $path === '/api/public/schedule' && $method === 'GET' => PublicEventsController::upcoming($db),
@@ -282,6 +328,8 @@ try {
 
         // ----- Auth + impersonation
         $path === '/api/admin/login' && $method === 'POST' => AuthController::tenantLogin($db),
+        $path === '/api/admin/password-reset/request' && $method === 'POST' => AuthController::requestPasswordReset($db, Url::origin()),
+        $path === '/api/admin/password-reset/confirm' && $method === 'POST' => AuthController::resetPassword($db),
         $path === '/api/admin/logout' && $method === 'POST' => AuthController::logoutTenant(),
         // GET logout for the nav link: clears both the tenant session and
         // any super-admin impersonation, then returns to the login screen.
@@ -296,6 +344,10 @@ try {
         // ----- Tenant admin API
         $path === '/api/admin/sessions/start' && $method === 'POST' => SessionController::start($db, $tenant, $session),
         $path === '/api/admin/sessions/end' && $method === 'POST' => SessionController::end($db, $tenant, $session),
+        $path === '/api/admin/team' && $method === 'GET' => TeamController::index($db),
+        $path === '/api/admin/team' && $method === 'POST' => TeamController::create($db, $tenant, Url::origin()),
+        (bool)preg_match('#^/api/admin/team/(\d+)$#', $path, $m) && $method === 'PATCH' => TeamController::update($db, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/team/(\d+)/invite$#', $path, $m) && $method === 'POST' => TeamController::resendInvite($db, (int)$m[1], Url::origin()),
 
         // ----- Venues
         $path === '/api/admin/venues' && $method === 'GET' => VenueController::index($db, $tenant, $session),
@@ -328,6 +380,7 @@ try {
         (bool)preg_match('#^/api/admin/songs/(\d+)$#', $path, $m) && $method === 'DELETE' => SongController::delete($db, (int)$m[1]),
         (bool)preg_match('#^/api/admin/songs/(\d+)/fetch-album-art$#', $path, $m) && $method === 'POST' => SongController::fetchAlbumArt($db, $tenant, (int)$m[1]),
         (bool)preg_match('#^/api/admin/songs/(\d+)/cache-album-art-url$#', $path, $m) && $method === 'POST' => SongController::cacheAlbumArtUrl($db, $tenant, (int)$m[1]),
+        (bool)preg_match('#^/api/admin/songs/(\d+)/video$#', $path, $m) && $method === 'POST' => SongController::uploadVideo($db, $tenant, (int)$m[1]),
         $path === '/api/admin/content' && $method === 'GET' => ContentController::index($tenant),
         $path === '/api/admin/content' && $method === 'POST' => ContentController::upload($tenant),
 
@@ -342,7 +395,12 @@ try {
     // Only ship 5xx to the error tracker; 400-class errors are user
     // input problems, not server bugs.
     if ($status >= 500) {
-        ErrorReporter::report($error, "Front controller {$method} {$path}");
+        $errorId = bin2hex(random_bytes(8));
+        ErrorReporter::report($error, "error_id={$errorId} Front controller {$method} {$path}");
+        $message = Env::get('APP_ENV') === 'production'
+            ? "Something went wrong. Reference: {$errorId}"
+            : $error->getMessage();
+        Response::json(['error' => $message, 'error_id' => $errorId], $status);
     }
     Response::json(['error' => $error->getMessage()], $status);
 }

@@ -17,8 +17,8 @@ final class DisplayPlaybackTest extends DatabaseTestCase
             'requestId' => 42,
             'video' => ['provider' => 'youtube', 'youtubeVideoId' => 'abc123', 'videoUrl' => ''],
         ];
-        EventBus::publish($this->tenantDb, 'display:cue', $payload);
-        $events = EventBus::after($this->tenantDb, 0);
+        EventBus::publish($this->tenantDb, 'display:cue', $payload, $this->sessionId);
+        $events = EventBus::after($this->tenantDb, 0, $this->sessionId);
         self::assertCount(1, $events);
         self::assertSame('display:cue', $events[0]['event_name']);
         self::assertSame('abc123', $events[0]['payload']['video']['youtubeVideoId']);
@@ -33,8 +33,8 @@ final class DisplayPlaybackTest extends DatabaseTestCase
             'startAtServerMs' => 1789482827000,
             'offsetSeconds' => 0.0,
         ];
-        EventBus::publish($this->tenantDb, 'display:play_at', $payload);
-        $events = EventBus::after($this->tenantDb, 0);
+        EventBus::publish($this->tenantDb, 'display:play_at', $payload, $this->sessionId);
+        $events = EventBus::after($this->tenantDb, 0, $this->sessionId);
         self::assertCount(1, $events);
         self::assertSame('display:play_at', $events[0]['event_name']);
         self::assertSame('deadbeef12345678', $events[0]['payload']['commandId']);
@@ -63,5 +63,31 @@ final class DisplayPlaybackTest extends DatabaseTestCase
         if (array_key_exists('play_state', $state)) {
             self::assertSame('stopped', $state['play_state']);
         }
+    }
+
+    public function testPlaybackClockPersistsAcrossPauseAndResume(): void
+    {
+        DisplayService::startPlayback(
+            $this->tenantDb,
+            $this->sessionId,
+            ['main'],
+            'command-123',
+            (int)(microtime(true) * 1000) - 1500,
+            4.0,
+        );
+        $playing = DisplayService::state($this->tenantDb, $this->sessionId);
+        self::assertSame('playing', $playing['play_state']);
+        self::assertSame('command-123', $playing['play_command_id']);
+
+        DisplayService::setPlaybackPaused($this->tenantDb, $this->sessionId, ['main'], true);
+        $paused = DisplayService::state($this->tenantDb, $this->sessionId);
+        self::assertSame('paused', $paused['play_state']);
+        self::assertGreaterThanOrEqual(5.4, (float)$paused['play_offset_seconds']);
+        self::assertNull($paused['play_started_at_ms']);
+
+        DisplayService::setPlaybackPaused($this->tenantDb, $this->sessionId, ['main'], false);
+        $resumed = DisplayService::state($this->tenantDb, $this->sessionId);
+        self::assertSame('playing', $resumed['play_state']);
+        self::assertNotNull($resumed['play_started_at_ms']);
     }
 }

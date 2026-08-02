@@ -136,6 +136,15 @@ final class QueueService
         }
 
         return self::tx($db, function () use ($db, $sessionId, $data, $requesterToken, $preventDuplicate, $songId, $sharedSongId): int {
+            // Serialize submissions for one karaoke session. This makes both
+            // duplicate-name checks and MAX(position)+1 atomic under
+            // concurrent public requests.
+            $sessionLock = $db->prepare('SELECT id FROM karaoke_sessions WHERE id = ? FOR UPDATE');
+            $sessionLock->execute([$sessionId]);
+            if (!$sessionLock->fetchColumn()) {
+                throw new \InvalidArgumentException('The karaoke session no longer exists');
+            }
+
             if ($preventDuplicate) {
                 // Limit is per singer name, not per device. This lets a shared
                 // device (kiosk/iPad) serve multiple singers without blocking
@@ -180,7 +189,9 @@ final class QueueService
             ]);
             $requestId = (int)$db->lastInsertId();
 
-            $position = (int)$db->query("SELECT COALESCE(MAX(position), 0) + 1 next_position FROM queue_items WHERE session_id = {$sessionId}")->fetchColumn();
+            $nextPosition = $db->prepare('SELECT COALESCE(MAX(position), 0) + 1 FROM queue_items WHERE session_id = ?');
+            $nextPosition->execute([$sessionId]);
+            $position = (int)$nextPosition->fetchColumn();
             $stmt = $db->prepare('INSERT INTO queue_items (session_id, request_id, position) VALUES (?, ?, ?)');
             $stmt->execute([$sessionId, $requestId, $position]);
             return $requestId;
@@ -283,14 +294,40 @@ final class QueueService
      */
     private static function applyOrder(PDO $db, int $sessionId, array $requestIds): void
     {
-        if (!$requestIds) {
+        $current = $db->prepare(
+            'SELECT request_id FROM queue_items WHERE session_id = ? ORDER BY position ASC FOR UPDATE'
+        );
+        $current->execute([$sessionId]);
+        /** @var list<int> $existing */
+        $existing = array_map('intval', $current->fetchAll(PDO::FETCH_COLUMN));
+        if (!$existing) {
             return;
         }
+
+        $valid = array_fill_keys($existing, true);
+        $seen = [];
+        $order = [];
+        foreach ($requestIds as $requestId) {
+            $requestId = (int)$requestId;
+            if (isset($valid[$requestId]) && !isset($seen[$requestId])) {
+                $order[] = $requestId;
+                $seen[$requestId] = true;
+            }
+        }
+        // A stale browser may omit a request that arrived moments earlier.
+        // Keep those items in their prior relative order instead of leaving
+        // them at an ever-growing temporary position.
+        foreach ($existing as $requestId) {
+            if (!isset($seen[$requestId])) {
+                $order[] = $requestId;
+            }
+        }
+
         $db->prepare('UPDATE queue_items SET position = position + 1000000 WHERE session_id = ?')
            ->execute([$sessionId]);
         $stmt = $db->prepare('UPDATE queue_items SET position = ? WHERE session_id = ? AND request_id = ?');
         $position = 1;
-        foreach ($requestIds as $requestId) {
+        foreach ($order as $requestId) {
             $stmt->execute([$position++, $sessionId, $requestId]);
         }
     }

@@ -39,6 +39,15 @@ final class StripeService
         return $key !== '';
     }
 
+    /** @return array{checkout:bool,webhook:bool} */
+    public static function configurationStatus(): array
+    {
+        return [
+            'checkout' => self::isConfigured(),
+            'webhook' => trim((string)(Env::get('STRIPE_WEBHOOK_SECRET', '') ?? '')) !== '',
+        ];
+    }
+
     /**
      * Create a Checkout session for a given tenant + plan and return
      * the URL to redirect the operator to. Stores the resulting
