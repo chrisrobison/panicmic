@@ -82,6 +82,45 @@ jobs:
       - name: make check
         run: make check
 
+      # Migration integrity. Every tenant migration must apply cleanly to a
+      # fresh schema, and the ledger must be consistent afterwards.
+      #
+      # Migration 014 shipped in code that depended on it but was never
+      # applied to the three live tenant databases, which took down every
+      # realtime write in the app. This step proves the files are runnable;
+      # `make migrate-check` on the deploy host proves they were actually run.
+      - name: Migration integrity (fresh schema applies cleanly)
+        run: |
+          set -euo pipefail
+          mysql -h 127.0.0.1 -uroot -proot \
+            -e "DROP DATABASE IF EXISTS panicmic_ci_migrate; CREATE DATABASE panicmic_ci_migrate;"
+
+          # Super scope first: the tenants table must exist before we can
+          # register the scratch tenant against it.
+          php scripts/migrate.php super
+
+          mysql -h 127.0.0.1 -uroot -proot panicmic_super -e \
+            "INSERT INTO tenants (slug, venue_name, night_name, database_name)
+             VALUES ('citest', 'CI Venue', 'CI Night', 'panicmic_ci_migrate')
+             ON DUPLICATE KEY UPDATE database_name = VALUES(database_name);"
+
+          php scripts/migrate.php tenant panicmic_ci_migrate
+
+          # Applying twice must be a no-op — catches a migration that isn't
+          # recorded in the ledger and would re-run on every deploy.
+          php scripts/migrate.php tenant panicmic_ci_migrate | tee /tmp/second-run.txt
+          grep -q 'Up to date' /tmp/second-run.txt
+
+          # Nothing may be left pending anywhere.
+          php scripts/migrate.php check
+
+      - name: Clean up migration test schema
+        if: always()
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot \
+            -e "DELETE FROM panicmic_super.tenants WHERE slug='citest';
+                DROP DATABASE IF EXISTS panicmic_ci_migrate;" || true
+
   browser:
     name: Browser smoke tests
     runs-on: ubuntu-latest

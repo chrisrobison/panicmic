@@ -85,8 +85,21 @@ final class WsManager
     private static function pidAlive(int $pid): bool
     {
         if (function_exists('posix_kill')) {
-            // signal 0 = existence check, no signal sent
-            return posix_kill($pid, 0);
+            // signal 0 = existence check, no signal sent.
+            if (posix_kill($pid, 0)) {
+                return true;
+            }
+            // EPERM means the process EXISTS but belongs to another user, so
+            // we may not signal it — that is very much "alive". Treating it
+            // as dead makes a CLI/cron run as a different user than the
+            // daemon (or than PHP-FPM) conclude the daemon is down and try
+            // to spawn a duplicate that then fails to bind the port.
+            if (function_exists('posix_get_last_error')
+                && posix_get_last_error() === (defined('POSIX_EPERM') ? POSIX_EPERM : 1)) {
+                return true;
+            }
+            // ESRCH (or anything else): fall through to the /proc check
+            // rather than trusting a single probe.
         }
         // Fallback for systems without the POSIX extension (e.g. some shared hosts).
         if (is_dir("/proc/{$pid}")) {

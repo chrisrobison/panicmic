@@ -31,6 +31,16 @@ final class Auth
         self::$db = $db;
     }
 
+    /**
+     * The request-scoped tenant DB, or null outside a tenant request.
+     * Lets view-layer helpers (e.g. the admin schema-drift banner) reach
+     * the connection without threading PDO through PageRenderer.
+     */
+    public static function db(): ?PDO
+    {
+        return self::$db;
+    }
+
     public static function requireTenantRole(string ...$roles): void
     {
         if (self::actingAsSuper()) {

@@ -24,7 +24,8 @@ CHECKSUM_FILE  := $(TOOLS_DIR)/checksums.sha256
 
 PHP_SOURCES    := $(shell find src public scripts -type f -name '*.php' 2>/dev/null)
 
-.PHONY: help tools lint stan test test-browser check clean-tools pin-checksums
+.PHONY: help tools lint stan test test-browser check clean-tools pin-checksums \
+        migrate migrate-status migrate-dry-run migrate-check
 
 help:
 	@echo 'Targets:'
@@ -36,6 +37,12 @@ help:
 	@echo '  make test-browser   run Playwright browser smoke tests'
 	@echo '  make check          lint + stan + test (CI runs this)'
 	@echo '  make clean-tools    remove ./tools/'
+	@echo ''
+	@echo 'Database:'
+	@echo '  make migrate-status  show applied/pending migrations for super + all tenants'
+	@echo '  make migrate-dry-run preview pending migrations without applying'
+	@echo '  make migrate         apply pending migrations to super + all tenants'
+	@echo '  make migrate-check   exit non-zero if any migration is pending (deploy gate)'
 
 tools: $(PHPUNIT) $(PHPSTAN)
 
@@ -112,6 +119,34 @@ test-browser:
 	@npm run test:browser
 
 check: lint stan test
+
+# ---------------------------------------------------------------------------
+# Database migrations
+#
+# Migrations are NOT applied automatically on deploy. TenantProvisioner only
+# runs the full migration set for *newly created* tenants, so existing tenant
+# databases drift silently as new files land. Migration 014 sat unapplied
+# against three live tenants and broke every realtime write in the app.
+#
+# `make migrate-check` is the guard: run it in your deploy pipeline (and
+# after pulling) so pending migrations fail loudly instead of at 9pm on a
+# Friday in front of a room full of people.
+# ---------------------------------------------------------------------------
+
+migrate-status:
+	@$(PHP) scripts/migrate.php status super
+	@$(PHP) scripts/migrate.php status tenants
+
+migrate-dry-run:
+	@$(PHP) scripts/migrate.php super --dry-run
+	@$(PHP) scripts/migrate.php tenants --dry-run
+
+migrate:
+	@$(PHP) scripts/migrate.php super
+	@$(PHP) scripts/migrate.php tenants
+
+migrate-check:
+	@$(PHP) scripts/migrate.php check
 
 clean-tools:
 	@rm -rf $(TOOLS_DIR)

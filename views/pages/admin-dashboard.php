@@ -1,8 +1,15 @@
 <?php
 use function PanicMic\Support\e;
+use PanicMic\Auth\Auth;
+use PanicMic\Http\HealthController;
 use PanicMic\Support\QrCode;
 use PanicMic\Support\Url;
 $current = 'dashboard';
+
+// Schema drift is invisible until it breaks a show, so surface it where
+// the KJ will actually see it. Unapplied migrations previously took down
+// every realtime write with no signal outside a log file.
+$pendingMigrations = ($healthDb = Auth::db()) ? HealthController::pendingMigrations($healthDb) : [];
 $host = $_SERVER['HTTP_HOST'] ?? '';
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https' : 'http';
 $singerUrl = $tenant['public_request_url'] ?: ($scheme . '://' . $host . Url::path('/'));
@@ -11,6 +18,17 @@ $dashboardQr = QrCode::svg($singerUrl, 96);
 <section class="admin-layout">
   <?php include __DIR__ . '/_admin-sidebar.php'; ?>
   <section class="operator kj-console">
+
+    <?php if ($pendingMigrations !== []): ?>
+      <div class="kj-alert kj-alert--danger" role="alert">
+        <strong>Database update required.</strong>
+        <?= count($pendingMigrations) ?> migration<?= count($pendingMigrations) === 1 ? '' : 's' ?>
+        (<?= e(implode(', ', $pendingMigrations)) ?>)
+        <?= count($pendingMigrations) === 1 ? 'has' : 'have' ?> not been applied to this account's database.
+        Realtime updates, the queue, and display sync may fail until an
+        administrator runs <code>make migrate</code> on the server.
+      </div>
+    <?php endif; ?>
 
     <header class="kj-toolbar">
       <div class="kj-toolbar-search">
