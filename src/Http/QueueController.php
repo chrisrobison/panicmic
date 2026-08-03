@@ -43,14 +43,28 @@ final class QueueController
             Response::json(['error' => 'A song selection is required'], 400);
         }
         $token = $_SESSION['requester_token'] ??= bin2hex(random_bytes(32));
-        $requestId = QueueService::submit(
-            $db,
-            (int)$session['id'],
-            $input,
-            $token,
-            (bool)($settings['prevent_duplicate_requests'] ?? true),
-            Connection::super()
-        );
+        // QueueService::submit rejects bad submissions by throwing. These are
+        // singer-input problems ("you already have a request up", "that song
+        // isn't in the catalog"), not server faults — without this catch they
+        // escaped to the front controller, which logged them to the error
+        // tracker and, in production, replaced the helpful message with
+        // "Something went wrong. Reference: <id>". The singer was left with an
+        // opaque error and no idea their request was already in the queue.
+        try {
+            $requestId = QueueService::submit(
+                $db,
+                (int)$session['id'],
+                $input,
+                $token,
+                (bool)($settings['prevent_duplicate_requests'] ?? true),
+                Connection::super()
+            );
+        } catch (\InvalidArgumentException $e) {
+            Response::json(['error' => $e->getMessage()], 422);
+        } catch (\RuntimeException $e) {
+            // Duplicate-request guard — the singer already holds a slot.
+            Response::json(['error' => $e->getMessage()], 409);
+        }
         self::autoAttachYouTubeVideo($db, $requestId, $settings);
         $sessionId = (int)$session['id'];
         EventBus::publish($db, 'request:created', ['requestId' => $requestId], $sessionId);

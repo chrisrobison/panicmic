@@ -885,8 +885,24 @@ button.link.danger:hover { color: #fca5a5; }
   .catalog-toolbar select { min-width: 120px; }
 
   .hero { padding: 28px 16px; }
-  .hero:has(.request-form) { height: calc(100dvh - 68px); padding: 12px 16px; }
-  .request-form .song-results { max-height: 220px; }
+  /* Phones: do NOT lock the request form to the viewport.
+     The desktop rule turns .hero into a fixed-height inner scroll container
+     (100dvh) with .request-form clipped inside it. On a phone that breaks
+     badly: iOS keeps 100dvh at its full pre-keyboard height when the software
+     keyboard opens, so everything under the keyboard — most of the search
+     results and the Submit button — sits inside a scroll container the singer
+     cannot reach, and the page itself has nothing to scroll. It reads as
+     "search results never came up". Let the document scroll normally instead. */
+  .hero:has(.request-form) {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding: 12px 16px;
+  }
+  .request-form { overflow: visible; }
+  /* Cap the list so a long result set doesn't bury the rest of the form,
+     but it now scrolls inside a normally-scrolling page. */
+  .request-form .song-results { max-height: 50vh; }
   .toolbar, .live-controls, .announcement, .admin-layout { grid-template-columns: 1fr; }
   .display-shell { grid-template-columns: 1fr; grid-template-rows: 1fr auto; height: auto; min-height: 100svh; overflow: auto; }
   .display-stage { min-height: 56vw; }
